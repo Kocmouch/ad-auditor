@@ -195,6 +195,10 @@ function IndexPopup() {
     chrome.storage.sync.set({ [DISABLE_CACHE_KEY]: nextValue })
   }
 
+  const openSetupGuide = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("tabs/welcome.html") })
+  }
+
   const theme = useMemo(
     () =>
       isDarkTheme
@@ -496,6 +500,26 @@ function IndexPopup() {
               }}
             />
           </span>
+        </button>
+
+        <button
+          onClick={openSetupGuide}
+          style={{
+            width: "100%",
+            marginTop: 12,
+            border: `1px solid ${theme.accent}`,
+            borderRadius: 12,
+            padding: "10px 12px",
+            background: theme.background,
+            color: theme.text,
+            cursor: "pointer",
+            textAlign: "center",
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
+          }}
+          type="button">
+          Open setup guide
         </button>
       </section>
       <p style={{ margin: "10px 2px 0", fontSize: 11, color: theme.textMuted }}>

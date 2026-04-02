@@ -1,6 +1,6 @@
 {
-  "name": "iframe-watcher",
-  "displayName": "Iframe watcher",
+  "name": "ad-auditor",
+  "displayName": "Ad Auditor",
   "version": "0.0.1",
   "description": "Visualizes the memory and DOM impact of ad banners by overlaying stats directly on iframes.",
   "author": "Jakub 'Kocmouch' Kamiński",
@@ -34,16 +34,6 @@
       "tabs",
       "storage",
       "debugger"
-    ],
-    "web_accessible_resources": [
-      {
-        "matches": [
-          "<all_urls>"
-        ],
-        "resources": [
-          "tabs/delta-flyer.html"
-        ]
-      }
     ]
   }
 }

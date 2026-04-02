@@ -757,6 +757,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return undefined
 })
 
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason !== "install") {
+    return
+  }
+
+  chrome.tabs.create({
+    url: chrome.runtime.getURL("tabs/welcome.html")
+  })
+})
+
 getDisableCacheSetting()
   .then((value) => {
     disableCacheEnabled = value

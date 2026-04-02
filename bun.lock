@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "iframe-watcher",
+      "name": "ad-auditor",
       "dependencies": {
         "plasmo": "0.90.5",
         "react": "18.2.0",

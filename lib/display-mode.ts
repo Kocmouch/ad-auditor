@@ -12,10 +12,10 @@ export const DISABLE_CACHE_KEY = "adAuditorDisableCache"
 
 export const DEFAULT_DISPLAY_MODE: DisplayMode = "inside_always"
 export const DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED = false
-export const DEFAULT_MEASUREMENT_METHOD: MeasurementMethod = "legacy_performance"
+export const DEFAULT_MEASUREMENT_METHOD: MeasurementMethod = "enhanced_cdp"
 export const DEFAULT_LIMIT_METRIC: LimitMetric = "resources"
 export const DEFAULT_LIMIT_BYTES = Math.round(2.5 * 1024 * 1024)
-export const DEFAULT_DISABLE_CACHE = false
+export const DEFAULT_DISABLE_CACHE = true
 
 export const parseDisplayMode = (value: unknown): DisplayMode => {
   if (
