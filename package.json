@@ -25,10 +25,15 @@
   },
   "manifest": {
     "host_permissions": [
-      "https://*/*"
+      "https://creatives-preview.rtbhouse.com/*",
+      "https://statics.creativecdn.com/*",
+      "https://ams.creativecdn.com/*"
     ],
     "permissions": [
-      "scripting"
+      "scripting",
+      "tabs",
+      "storage",
+      "debugger"
     ],
     "web_accessible_resources": [
       {
