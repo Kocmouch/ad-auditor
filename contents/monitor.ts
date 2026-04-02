@@ -20,6 +20,13 @@ import {
   parseMeasurementMethod,
   parseStandaloneAmsPreviewBadgeEnabled
 } from "~lib/display-mode"
+import {
+  filterAndSortRequestItems,
+  getRequestTypes,
+  type RequestListItem,
+  type RequestSort,
+  type RequestStatusFilter
+} from "~lib/request-list"
 import { getUsageColor } from "~lib/usage-color"
 
 export const config: PlasmoCSConfig = {
@@ -36,6 +43,7 @@ const SOURCE_ID = "ad-auditor"
 const STATS_POST_THROTTLE_MS = 250
 const ENHANCED_POLL_MS = 500
 const AMS_PREVIEW_PATH = "/ad/creatives"
+const REQUEST_LIST_LIMIT = 100
 
 type Totals = {
   requestItems: RequestItem[]
@@ -44,14 +52,7 @@ type Totals = {
   transferred: number
 }
 
-type RequestItem = {
-  host: string
-  resources: number
-  status: "done" | "pending"
-  transferred: number
-  type: string
-  url: string
-}
+type RequestItem = RequestListItem
 
 const isIframeContext = (() => {
   try {
@@ -70,12 +71,20 @@ let limitBytes = DEFAULT_LIMIT_BYTES
 let badge: HTMLDivElement | null = null
 let requestListContainer: HTMLDivElement | null = null
 let requestListElement: HTMLUListElement | null = null
+let requestTypeSelect: HTMLSelectElement | null = null
+let requestStatusSelect: HTMLSelectElement | null = null
+let requestSortSelect: HTMLSelectElement | null = null
+let requestHostInput: HTMLInputElement | null = null
+let requestShowAllCheckbox: HTMLInputElement | null = null
+let requestSummary: HTMLSpanElement | null = null
 let requestsValueSpan: HTMLSpanElement | null = null
 let transferredValueSpan: HTMLSpanElement | null = null
 let resourcesValueSpan: HTMLSpanElement | null = null
 let openButton: HTMLButtonElement | null = null
 let isHoverActive = false
+let isRequestListHoverActive = false
 let lastStatsPostAt = 0
+let latestRequestItems: RequestItem[] = []
 
 let legacyTotals: Totals = {
   requestItems: [],
@@ -114,19 +123,79 @@ const shortUrl = (url: string): string => {
   return `${url.slice(0, maxLength - 1)}…`
 }
 
-const updateRequestListUi = (items: RequestItem[]) => {
-  if (!requestListContainer || !requestListElement) {
+const syncRequestTypeOptions = (items: RequestItem[]) => {
+  if (!requestTypeSelect) {
     return
   }
 
+  const selectedType = requestTypeSelect.value || "all"
+  const requestTypes = getRequestTypes(items)
+  requestTypeSelect.textContent = ""
+
+  const allOption = document.createElement("option")
+  allOption.value = "all"
+  allOption.textContent = "All types"
+  requestTypeSelect.appendChild(allOption)
+
+  for (const requestType of requestTypes) {
+    const option = document.createElement("option")
+    option.value = requestType
+    option.textContent = requestType
+    requestTypeSelect.appendChild(option)
+  }
+
+  requestTypeSelect.value = requestTypes.includes(selectedType)
+    ? selectedType
+    : "all"
+}
+
+const renderRequestListUi = () => {
+  if (
+    !requestListContainer ||
+    !requestListElement ||
+    !requestTypeSelect ||
+    !requestStatusSelect ||
+    !requestSortSelect ||
+    !requestHostInput ||
+    !requestShowAllCheckbox ||
+    !requestSummary
+  ) {
+    return
+  }
+
+  syncRequestTypeOptions(latestRequestItems)
   requestListElement.textContent = ""
 
-  if (items.length === 0) {
+  if (latestRequestItems.length === 0) {
+    requestSummary.textContent = "0/0 requests"
     requestListContainer.style.display = "none"
     return
   }
 
-  for (const item of items) {
+  const sort = requestSortSelect.value
+  const status = requestStatusSelect.value
+  const result = filterAndSortRequestItems(
+    latestRequestItems,
+    {
+      hostQuery: requestHostInput.value,
+      showAll: requestShowAllCheckbox.checked,
+      sort:
+        sort === "resources_desc" || sort === "url_asc"
+          ? (sort as RequestSort)
+          : "transferred_desc",
+      status:
+        status === "done" || status === "pending"
+          ? (status as RequestStatusFilter)
+          : "all",
+      type: requestTypeSelect.value || "all"
+    },
+    REQUEST_LIST_LIMIT
+  )
+
+  requestSummary.textContent = `${result.visibleItems.length}/${result.filteredCount}/${result.totalCount} requests`
+  requestListContainer.style.display = isRequestListHoverActive ? "flex" : "none"
+
+  for (const item of result.visibleItems) {
     const row = document.createElement("li")
     row.setAttribute(
       "style",
@@ -146,6 +215,25 @@ const updateRequestListUi = (items: RequestItem[]) => {
     row.append(meta, url)
     requestListElement.appendChild(row)
   }
+
+  if (result.visibleItems.length === 0) {
+    const empty = document.createElement("li")
+    empty.textContent = "No requests match current filters."
+    empty.style.color = "#d8dde7"
+    empty.style.listStyle = "none"
+    requestListElement.appendChild(empty)
+  } else if (result.hasMore && !requestShowAllCheckbox.checked) {
+    const more = document.createElement("li")
+    more.textContent = `Showing top ${REQUEST_LIST_LIMIT}. Enable Show all to see every request.`
+    more.style.color = "#d8dde7"
+    more.style.listStyle = "none"
+    requestListElement.appendChild(more)
+  }
+}
+
+const updateRequestListUi = (items: RequestItem[]) => {
+  latestRequestItems = items
+  renderRequestListUi()
 }
 
 const addEntrySizesToTotals = (
@@ -386,9 +474,72 @@ const ensureBadge = (showOpenButton: boolean) => {
         "overflow: auto",
         "box-sizing: border-box",
         "padding: 6px 8px",
+        "flex-direction: column",
+        "gap: 6px",
         "background: rgba(0, 0, 0, 0.94)",
         "border-top: 1px solid rgba(125, 255, 106, 0.45)"
       ].join(";")
+    )
+
+    const nextRequestFiltersBar = document.createElement("div")
+    nextRequestFiltersBar.setAttribute(
+      "style",
+      "display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:center"
+    )
+
+    const nextRequestTypeSelect = document.createElement("select")
+    nextRequestTypeSelect.setAttribute(
+      "style",
+      "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+    )
+
+    const nextRequestStatusSelect = document.createElement("select")
+    nextRequestStatusSelect.setAttribute(
+      "style",
+      "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+    )
+    nextRequestStatusSelect.innerHTML =
+      '<option value="all">All statuses</option><option value="done">Done</option><option value="pending">Pending</option>'
+
+    const nextRequestSortSelect = document.createElement("select")
+    nextRequestSortSelect.setAttribute(
+      "style",
+      "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+    )
+    nextRequestSortSelect.innerHTML =
+      '<option value="transferred_desc">Sort: transferred</option><option value="resources_desc">Sort: resources</option><option value="url_asc">Sort: url</option>'
+
+    const nextRequestHostInput = document.createElement("input")
+    nextRequestHostInput.type = "text"
+    nextRequestHostInput.placeholder = "Host filter (contains)"
+    nextRequestHostInput.setAttribute(
+      "style",
+      "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+    )
+
+    const nextRequestShowAllLabel = document.createElement("label")
+    nextRequestShowAllLabel.setAttribute(
+      "style",
+      "display:flex;align-items:center;gap:6px;font-size:10px;color:#d8dde7"
+    )
+    const nextRequestShowAll = document.createElement("input")
+    nextRequestShowAll.type = "checkbox"
+    nextRequestShowAllLabel.append(nextRequestShowAll, document.createTextNode("Show all"))
+
+    const nextRequestSummary = document.createElement("span")
+    nextRequestSummary.textContent = "0/0 requests"
+    nextRequestSummary.setAttribute(
+      "style",
+      "justify-self:end;font-size:10px;color:#9db7d2"
+    )
+
+    nextRequestFiltersBar.append(
+      nextRequestTypeSelect,
+      nextRequestStatusSelect,
+      nextRequestSortSelect,
+      nextRequestHostInput,
+      nextRequestShowAllLabel,
+      nextRequestSummary
     )
 
     const nextRequestList = document.createElement("ul")
@@ -396,7 +547,8 @@ const ensureBadge = (showOpenButton: boolean) => {
       "style",
       "margin:0;padding:0;display:flex;flex-direction:column;gap:2px"
     )
-    nextRequestListContainer.appendChild(nextRequestList)
+
+    nextRequestListContainer.append(nextRequestFiltersBar, nextRequestList)
 
     const nextOpenButton = document.createElement("button")
     nextOpenButton.type = "button"
@@ -419,17 +571,23 @@ const ensureBadge = (showOpenButton: boolean) => {
 
     nextBadge.append(statsContainer, nextOpenButton, nextRequestListContainer)
 
+    nextRequestTypeSelect.addEventListener("change", renderRequestListUi)
+    nextRequestStatusSelect.addEventListener("change", renderRequestListUi)
+    nextRequestSortSelect.addEventListener("change", renderRequestListUi)
+    nextRequestHostInput.addEventListener("input", renderRequestListUi)
+    nextRequestShowAll.addEventListener("change", renderRequestListUi)
+
     nextBadge.addEventListener("mouseenter", () => {
+      isRequestListHoverActive = true
       if (!requestListContainer || !requestListElement) {
         return
       }
 
-      if (requestListElement.childElementCount > 0) {
-        requestListContainer.style.display = "block"
-      }
+      renderRequestListUi()
     })
 
     nextBadge.addEventListener("mouseleave", () => {
+      isRequestListHoverActive = false
       if (requestListContainer) {
         requestListContainer.style.display = "none"
       }
@@ -440,6 +598,12 @@ const ensureBadge = (showOpenButton: boolean) => {
     badge = nextBadge
     requestListContainer = nextRequestListContainer
     requestListElement = nextRequestList
+    requestTypeSelect = nextRequestTypeSelect
+    requestStatusSelect = nextRequestStatusSelect
+    requestSortSelect = nextRequestSortSelect
+    requestHostInput = nextRequestHostInput
+    requestShowAllCheckbox = nextRequestShowAll
+    requestSummary = nextRequestSummary
     requestsValueSpan = nextRequestsValue
     transferredValueSpan = nextTransferredValue
     resourcesValueSpan = nextResourcesValue
@@ -457,10 +621,18 @@ const removeBadge = () => {
   badge = null
   requestListContainer = null
   requestListElement = null
+  requestTypeSelect = null
+  requestStatusSelect = null
+  requestSortSelect = null
+  requestHostInput = null
+  requestShowAllCheckbox = null
+  requestSummary = null
   requestsValueSpan = null
   transferredValueSpan = null
   resourcesValueSpan = null
   openButton = null
+  isRequestListHoverActive = false
+  latestRequestItems = []
 }
 
 const applyUsageColor = (totals: Totals) => {

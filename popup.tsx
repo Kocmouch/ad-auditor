@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 
 import {
+  BELOW_IFRAME_FULL_WIDTH_KEY,
+  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+  DEFAULT_SHOW_CDP_STATUS,
   DEFAULT_DISABLE_CACHE,
   DEFAULT_LIMIT_BYTES,
   DEFAULT_LIMIT_METRIC,
@@ -12,6 +15,7 @@ import {
   LIMIT_BYTES_KEY,
   LIMIT_METRIC_KEY,
   MEASUREMENT_METHOD_KEY,
+  SHOW_CDP_STATUS_KEY,
   STANDALONE_AMS_PREVIEW_BADGE_KEY,
   type DisplayMode,
   type LimitMetric,
@@ -21,6 +25,8 @@ import {
   parseLimitBytes,
   parseLimitMetric,
   parseMeasurementMethod,
+  parseBelowIframeFullWidth,
+  parseShowCdpStatus,
   parseStandaloneAmsPreviewBadgeEnabled
 } from "~lib/display-mode"
 
@@ -93,6 +99,35 @@ const LIMIT_METRIC_OPTIONS: Array<{
 const formatLimitMb = (bytes: number): string =>
   (bytes / (1024 * 1024)).toFixed(2).replace(/\.?0+$/, "")
 
+type CdpStatus = "idle" | "loading" | "attached" | "fallback" | "error"
+type LimitPreset = {
+  bytes: number
+  key: "light" | "standard" | "strict"
+  label: string
+  valueLabel: string
+}
+
+const LIMIT_PRESETS: LimitPreset[] = [
+  {
+    bytes: Math.round(1.5 * 1024 * 1024),
+    key: "light",
+    label: "Light",
+    valueLabel: "1.5 MB"
+  },
+  {
+    bytes: Math.round(2.5 * 1024 * 1024),
+    key: "standard",
+    label: "Standard",
+    valueLabel: "2.5 MB"
+  },
+  {
+    bytes: Math.round(5 * 1024 * 1024),
+    key: "strict",
+    label: "Strict",
+    valueLabel: "5 MB"
+  }
+]
+
 function IndexPopup() {
   const [mode, setMode] = useState<DisplayMode>(DEFAULT_DISPLAY_MODE)
   const [isDarkTheme, setIsDarkTheme] = useState(false)
@@ -102,6 +137,14 @@ function IndexPopup() {
   const [standaloneAmsPreviewBadgeEnabled, setStandaloneAmsPreviewBadgeEnabled] =
     useState<boolean>(DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED)
   const [disableCache, setDisableCache] = useState<boolean>(DEFAULT_DISABLE_CACHE)
+  const [showCdpStatus, setShowCdpStatus] = useState<boolean>(
+    DEFAULT_SHOW_CDP_STATUS
+  )
+  const [cdpStatus, setCdpStatus] = useState<CdpStatus>("idle")
+  const [cdpStatusReason, setCdpStatusReason] = useState("")
+  const [belowIframeFullWidth, setBelowIframeFullWidth] = useState<boolean>(
+    DEFAULT_BELOW_IFRAME_FULL_WIDTH
+  )
   const [limitMetric, setLimitMetric] = useState<LimitMetric>(DEFAULT_LIMIT_METRIC)
   const [limitBytes, setLimitBytes] = useState<number>(DEFAULT_LIMIT_BYTES)
   const [limitMbInput, setLimitMbInput] = useState<string>(
@@ -115,6 +158,8 @@ function IndexPopup() {
         MEASUREMENT_METHOD_KEY,
         STANDALONE_AMS_PREVIEW_BADGE_KEY,
         DISABLE_CACHE_KEY,
+        SHOW_CDP_STATUS_KEY,
+        BELOW_IFRAME_FULL_WIDTH_KEY,
         LIMIT_METRIC_KEY,
         LIMIT_BYTES_KEY
       ],
@@ -127,6 +172,10 @@ function IndexPopup() {
           )
         )
         setDisableCache(parseDisableCache(result[DISABLE_CACHE_KEY]))
+        setShowCdpStatus(parseShowCdpStatus(result[SHOW_CDP_STATUS_KEY]))
+        setBelowIframeFullWidth(
+          parseBelowIframeFullWidth(result[BELOW_IFRAME_FULL_WIDTH_KEY])
+        )
 
         const parsedLimitMetric = parseLimitMetric(result[LIMIT_METRIC_KEY])
         const parsedLimitBytes = parseLimitBytes(result[LIMIT_BYTES_KEY])
@@ -170,6 +219,12 @@ function IndexPopup() {
     chrome.storage.sync.set({ [LIMIT_METRIC_KEY]: nextLimitMetric })
   }
 
+  const onSelectLimitPreset = (presetBytes: number) => {
+    setLimitBytes(presetBytes)
+    setLimitMbInput(formatLimitMb(presetBytes))
+    chrome.storage.sync.set({ [LIMIT_BYTES_KEY]: presetBytes })
+  }
+
   const persistLimitMb = () => {
     const parsedMb = Number.parseFloat(limitMbInput.replace(",", "."))
     if (!Number.isFinite(parsedMb) || parsedMb <= 0) {
@@ -195,9 +250,94 @@ function IndexPopup() {
     chrome.storage.sync.set({ [DISABLE_CACHE_KEY]: nextValue })
   }
 
+  const onToggleShowCdpStatus = () => {
+    const nextValue = !showCdpStatus
+    setShowCdpStatus(nextValue)
+    chrome.storage.sync.set({ [SHOW_CDP_STATUS_KEY]: nextValue })
+  }
+
+  const onToggleBelowIframeFullWidth = () => {
+    const nextValue = !belowIframeFullWidth
+    setBelowIframeFullWidth(nextValue)
+    chrome.storage.sync.set({ [BELOW_IFRAME_FULL_WIDTH_KEY]: nextValue })
+  }
+
   const openSetupGuide = () => {
     chrome.tabs.create({ url: chrome.runtime.getURL("tabs/welcome.html") })
   }
+
+  useEffect(() => {
+    if (!showCdpStatus) {
+      setCdpStatus("idle")
+      setCdpStatusReason("")
+      return
+    }
+
+    let disposed = false
+    const applyStatus = (status: CdpStatus, reason = "") => {
+      if (disposed) {
+        return
+      }
+
+      setCdpStatus(status)
+      setCdpStatusReason(reason)
+    }
+
+    const refresh = () => {
+      if (measurementMethod !== "enhanced_cdp") {
+        applyStatus(
+          "fallback",
+          "Legacy measurement mode is selected in popup settings."
+        )
+        return
+      }
+
+      setCdpStatus("loading")
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0]?.id
+        if (typeof tabId !== "number") {
+          applyStatus("fallback", "No active tab selected.")
+          return
+        }
+
+        chrome.runtime.sendMessage(
+          {
+            tabId,
+            type: "ad-auditor/get-cdp-status"
+          },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              applyStatus(
+                "error",
+                chrome.runtime.lastError.message || "Unable to read CDP status."
+              )
+              return
+            }
+
+            const nextStatus = response?.status as CdpStatus | undefined
+            if (
+              nextStatus !== "attached" &&
+              nextStatus !== "fallback" &&
+              nextStatus !== "error"
+            ) {
+              applyStatus("error", "Unexpected CDP status response.")
+              return
+            }
+
+            applyStatus(nextStatus, typeof response?.reason === "string" ? response.reason : "")
+          }
+        )
+      })
+    }
+
+    refresh()
+    const refreshTimerId = window.setInterval(refresh, 2000)
+
+    return () => {
+      disposed = true
+      window.clearInterval(refreshTimerId)
+    }
+  }, [showCdpStatus, measurementMethod])
 
   const theme = useMemo(
     () =>
@@ -221,6 +361,46 @@ function IndexPopup() {
             accent: "#0f7f5f"
           },
     [isDarkTheme]
+  )
+
+  const cdpStatusUi = useMemo(() => {
+    if (cdpStatus === "attached") {
+      return {
+        color: "#34d399",
+        label: "Attached"
+      }
+    }
+
+    if (cdpStatus === "fallback") {
+      return {
+        color: "#f59e0b",
+        label: "Fallback"
+      }
+    }
+
+    if (cdpStatus === "error") {
+      return {
+        color: "#ef4444",
+        label: "Error"
+      }
+    }
+
+    if (cdpStatus === "loading") {
+      return {
+        color: theme.textMuted,
+        label: "Checking..."
+      }
+    }
+
+    return {
+      color: theme.textMuted,
+      label: "Disabled"
+    }
+  }, [cdpStatus, theme.textMuted])
+
+  const activeLimitPreset = useMemo(
+    () => LIMIT_PRESETS.find((preset) => preset.bytes === limitBytes)?.key ?? null,
+    [limitBytes]
   )
 
   useEffect(() => {
@@ -336,6 +516,60 @@ function IndexPopup() {
           "Display mode"
         )}
 
+        <button
+          aria-pressed={belowIframeFullWidth}
+          onClick={onToggleBelowIframeFullWidth}
+          style={{
+            display: "flex",
+            width: "100%",
+            marginTop: 12,
+            border: `1px solid ${belowIframeFullWidth ? theme.accent : "transparent"}`,
+            borderRadius: 12,
+            padding: "10px 12px",
+            background: theme.surface,
+            color: theme.text,
+            cursor: "pointer",
+            textAlign: "left",
+            boxShadow: belowIframeFullWidth
+              ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
+              : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
+          }}
+          type="button">
+          <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>
+              Below iframe bar: full page width
+            </span>
+            <span style={{ fontSize: 12, color: theme.textMuted }}>
+              If enabled, status bar uses `width: 100%` instead of iframe width.
+            </span>
+          </span>
+          <span
+            style={{
+              marginLeft: "auto",
+              width: 44,
+              height: 24,
+              borderRadius: 999,
+              background: belowIframeFullWidth ? theme.accent : theme.background,
+              boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
+              position: "relative",
+              flexShrink: 0
+            }}>
+            <span
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: theme.surface,
+                boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
+                position: "absolute",
+                top: 3,
+                left: belowIframeFullWidth ? 23 : 3,
+                transition: "left 120ms ease-out"
+              }}
+            />
+          </span>
+        </button>
+
         <p style={{ margin: "14px 0 8px", fontSize: 12, color: theme.textMuted }}>
           Measurement engine
         </p>
@@ -346,6 +580,80 @@ function IndexPopup() {
           "Measurement engine"
         )}
 
+        <button
+          aria-pressed={showCdpStatus}
+          onClick={onToggleShowCdpStatus}
+          style={{
+            display: "flex",
+            width: "100%",
+            marginTop: 12,
+            border: `1px solid ${showCdpStatus ? theme.accent : "transparent"}`,
+            borderRadius: 12,
+            padding: "10px 12px",
+            background: theme.surface,
+            color: theme.text,
+            cursor: "pointer",
+            textAlign: "left",
+            boxShadow: showCdpStatus
+              ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
+              : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
+          }}
+          type="button">
+          <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Show CDP status</span>
+            <span style={{ fontSize: 12, color: theme.textMuted }}>
+              Adds a live CDP attached/fallback/error status panel.
+            </span>
+          </span>
+          <span
+            style={{
+              marginLeft: "auto",
+              width: 44,
+              height: 24,
+              borderRadius: 999,
+              background: showCdpStatus ? theme.accent : theme.background,
+              boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
+              position: "relative",
+              flexShrink: 0
+            }}>
+            <span
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: theme.surface,
+                boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
+                position: "absolute",
+                top: 3,
+                left: showCdpStatus ? 23 : 3,
+                transition: "left 120ms ease-out"
+              }}
+            />
+          </span>
+        </button>
+
+        {showCdpStatus ? (
+          <div
+            style={{
+              marginTop: 10,
+              borderRadius: 12,
+              padding: "10px 12px",
+              border: `1px solid ${theme.accent}`,
+              background: theme.surface,
+              boxShadow: `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
+            }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
+              CDP status:{" "}
+              <span style={{ color: cdpStatusUi.color }}>{cdpStatusUi.label}</span>
+            </p>
+            {cdpStatusReason ? (
+              <p style={{ margin: "6px 0 0", fontSize: 12, color: theme.textMuted }}>
+                {cdpStatusReason}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <p style={{ margin: "14px 0 8px", fontSize: 12, color: theme.textMuted }}>
           Limit coloring
         </p>
@@ -355,6 +663,47 @@ function IndexPopup() {
           onSelectLimitMetric,
           "Limit metric"
         )}
+
+        <p style={{ margin: "14px 0 8px", fontSize: 12, color: theme.textMuted }}>
+          Limit presets
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          {LIMIT_PRESETS.map((preset) => {
+            const selected = activeLimitPreset === preset.key
+
+            return (
+              <button
+                key={preset.key}
+                onClick={() => onSelectLimitPreset(preset.bytes)}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 2,
+                  border: selected
+                    ? `1px solid ${theme.accent}`
+                    : "1px solid transparent",
+                  borderRadius: 10,
+                  padding: "8px 6px",
+                  background: theme.surface,
+                  color: theme.text,
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: selected ? 700 : 600,
+                  boxShadow: selected
+                    ? `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
+                    : `4px 4px 8px ${theme.shadowDark}, -4px -4px 8px ${theme.shadowLight}`
+                }}
+                type="button">
+                <span>{preset.label}</span>
+                <span style={{ fontSize: 10, fontWeight: 500, color: theme.textMuted }}>
+                  {preset.valueLabel}
+                </span>
+              </button>
+            )
+          })}
+        </div>
 
         <div
           style={{
@@ -522,9 +871,6 @@ function IndexPopup() {
           Open setup guide
         </button>
       </section>
-      <p style={{ margin: "10px 2px 0", fontSize: 11, color: theme.textMuted }}>
-        Neomorphic UI follows browser light/dark preference automatically.
-      </p>
     </main>
   )
 }

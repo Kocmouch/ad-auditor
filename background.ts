@@ -1,7 +1,18 @@
 import {
+  BELOW_IFRAME_FULL_WIDTH_KEY,
+  CURRENT_SETTINGS_VERSION,
+  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+  DEFAULT_DISPLAY_MODE,
   DEFAULT_DISABLE_CACHE,
+  DEFAULT_MEASUREMENT_METHOD,
+  DEFAULT_SHOW_CDP_STATUS,
   DISABLE_CACHE_KEY,
-  parseDisableCache
+  DISPLAY_MODE_KEY,
+  MEASUREMENT_METHOD_KEY,
+  SETTINGS_VERSION_KEY,
+  SHOW_CDP_STATUS_KEY,
+  parseDisableCache,
+  parseSettingsVersion
 } from "~lib/display-mode"
 
 const OPEN_TAB_DEDUPE_WINDOW_MS = 800
@@ -161,12 +172,77 @@ const clearSessionMetrics = (session: TabSession) => {
   session.requests.clear()
 }
 
-const getDisableCacheSetting = (): Promise<boolean> =>
+const getStorageSyncValues = (
+  keys: string[]
+): Promise<Record<string, unknown>> =>
   new Promise((resolve) => {
-    chrome.storage.sync.get([DISABLE_CACHE_KEY], (result) => {
-      resolve(parseDisableCache(result[DISABLE_CACHE_KEY]))
+    chrome.storage.sync.get(keys, (result) => {
+      resolve(result as Record<string, unknown>)
     })
   })
+
+const setStorageSyncValues = (
+  values: Record<string, unknown>
+): Promise<void> =>
+  new Promise((resolve) => {
+    chrome.storage.sync.set(values, () => resolve())
+  })
+
+const getInstallDefaults = (): Record<string, unknown> => ({
+  [DISPLAY_MODE_KEY]: DEFAULT_DISPLAY_MODE,
+  [MEASUREMENT_METHOD_KEY]: DEFAULT_MEASUREMENT_METHOD,
+  [DISABLE_CACHE_KEY]: DEFAULT_DISABLE_CACHE,
+  [SHOW_CDP_STATUS_KEY]: DEFAULT_SHOW_CDP_STATUS,
+  [BELOW_IFRAME_FULL_WIDTH_KEY]: DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+  [SETTINGS_VERSION_KEY]: CURRENT_SETTINGS_VERSION
+})
+
+const runSettingsMigration = async () => {
+  const current = await getStorageSyncValues([
+    BELOW_IFRAME_FULL_WIDTH_KEY,
+    DISPLAY_MODE_KEY,
+    MEASUREMENT_METHOD_KEY,
+    DISABLE_CACHE_KEY,
+    SHOW_CDP_STATUS_KEY,
+    SETTINGS_VERSION_KEY
+  ])
+  const updates: Record<string, unknown> = {}
+  const storedVersion = parseSettingsVersion(current[SETTINGS_VERSION_KEY])
+
+  if (storedVersion < CURRENT_SETTINGS_VERSION) {
+    if (typeof current[DISPLAY_MODE_KEY] === "undefined") {
+      updates[DISPLAY_MODE_KEY] = DEFAULT_DISPLAY_MODE
+    }
+
+    if (typeof current[MEASUREMENT_METHOD_KEY] === "undefined") {
+      updates[MEASUREMENT_METHOD_KEY] = DEFAULT_MEASUREMENT_METHOD
+    }
+
+    if (typeof current[DISABLE_CACHE_KEY] === "undefined") {
+      updates[DISABLE_CACHE_KEY] = DEFAULT_DISABLE_CACHE
+    }
+
+    if (typeof current[SHOW_CDP_STATUS_KEY] === "undefined") {
+      updates[SHOW_CDP_STATUS_KEY] = DEFAULT_SHOW_CDP_STATUS
+    }
+
+    if (typeof current[BELOW_IFRAME_FULL_WIDTH_KEY] === "undefined") {
+      updates[BELOW_IFRAME_FULL_WIDTH_KEY] = DEFAULT_BELOW_IFRAME_FULL_WIDTH
+    }
+
+    updates[SETTINGS_VERSION_KEY] = CURRENT_SETTINGS_VERSION
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await setStorageSyncValues(updates)
+  }
+
+  disableCacheEnabled = parseDisableCache(
+    Object.prototype.hasOwnProperty.call(updates, DISABLE_CACHE_KEY)
+      ? updates[DISABLE_CACHE_KEY]
+      : current[DISABLE_CACHE_KEY]
+  )
+}
 
 const sendDebuggerCommand = <T>(
   debuggee: DebuggeeWithSession,
@@ -606,6 +682,48 @@ const getEnhancedStatsErrorPayload = (reason: string) => ({
   transferred: 0
 })
 
+const getCdpStatusForTab = async (tabId: number) => {
+  const tab = await new Promise<chrome.tabs.Tab | null>((resolve) => {
+    chrome.tabs.get(tabId, (resolvedTab) => {
+      const err = chrome.runtime.lastError
+      if (err) {
+        resolve(null)
+        return
+      }
+
+      resolve(resolvedTab)
+    })
+  })
+
+  if (!tab) {
+    return {
+      reason: "Tab not found",
+      status: "error" as const
+    }
+  }
+
+  const tabUrl = tab.pendingUrl ?? tab.url ?? ""
+  if (!isTargetAuditUrl(tabUrl)) {
+    return {
+      reason: "Open a supported preview domain to attach CDP.",
+      status: "fallback" as const
+    }
+  }
+
+  const session = await ensureDebuggerAttached(tabId)
+  if (!session.attached) {
+    return {
+      reason: session.attachError ?? "Failed to attach debugger",
+      status: "error" as const
+    }
+  }
+
+  return {
+    reason: "",
+    status: "attached" as const
+  }
+}
+
 chrome.debugger.onEvent.addListener(handleDebuggerEvent)
 
 chrome.debugger.onDetach.addListener((source, reason) => {
@@ -722,6 +840,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
+  if (message?.type === "ad-auditor/get-cdp-status") {
+    const tabId = typeof message?.tabId === "number" ? message.tabId : sender.tab?.id
+
+    if (typeof tabId !== "number") {
+      sendResponse({
+        ok: false,
+        reason: "Missing tab id",
+        status: "error"
+      })
+      return true
+    }
+
+    getCdpStatusForTab(tabId)
+      .then((status) => {
+        sendResponse({
+          ok: true,
+          ...status
+        })
+      })
+      .catch((error: unknown) => {
+        sendResponse({
+          ok: false,
+          reason: error instanceof Error ? error.message : "Failed to inspect CDP",
+          status: "error"
+        })
+      })
+
+    return true
+  }
+
   if (message?.type === "ad-auditor/get-enhanced-stats") {
     const tabId = sender.tab?.id
     const documentUrl =
@@ -762,16 +910,18 @@ chrome.runtime.onInstalled.addListener((details) => {
     return
   }
 
-  chrome.tabs.create({
-    url: chrome.runtime.getURL("tabs/welcome.html")
+  const defaults = getInstallDefaults()
+
+  chrome.storage.sync.set(defaults, () => {
+    disableCacheEnabled = parseDisableCache(defaults[DISABLE_CACHE_KEY])
+
+    chrome.tabs.create({
+      url: chrome.runtime.getURL("tabs/welcome.html")
+    })
   })
 })
 
-getDisableCacheSetting()
-  .then((value) => {
-    disableCacheEnabled = value
-  })
-  .catch(() => undefined)
+runSettingsMigration().catch(() => undefined)
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "sync" || !changes[DISABLE_CACHE_KEY]) {

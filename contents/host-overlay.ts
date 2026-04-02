@@ -1,6 +1,8 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 import {
+  BELOW_IFRAME_FULL_WIDTH_KEY,
+  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
   DEFAULT_LIMIT_BYTES,
   DEFAULT_LIMIT_METRIC,
   DEFAULT_DISPLAY_MODE,
@@ -10,9 +12,17 @@ import {
   type DisplayMode,
   type LimitMetric,
   parseDisplayMode,
+  parseBelowIframeFullWidth,
   parseLimitBytes,
   parseLimitMetric
 } from "~lib/display-mode"
+import {
+  filterAndSortRequestItems,
+  getRequestTypes,
+  type RequestListItem,
+  type RequestSort,
+  type RequestStatusFilter
+} from "~lib/request-list"
 import { getUsageColor } from "~lib/usage-color"
 
 export const config: PlasmoCSConfig = {
@@ -20,6 +30,7 @@ export const config: PlasmoCSConfig = {
 }
 
 const SOURCE_ID = "ad-auditor"
+const REQUEST_LIST_LIMIT = 100
 
 type StatsPayload = {
   requestCount: number
@@ -32,19 +43,19 @@ type StatsPayload = {
   url: string
 }
 
-type RequestItem = {
-  host: string
-  resources: number
-  status: "done" | "pending"
-  transferred: number
-  type: string
-  url: string
-}
+type RequestItem = RequestListItem
 
 type BadgeState = {
   badge: HTMLDivElement
+  hostFilterInput: HTMLInputElement
+  isRequestListHoverActive: boolean
   requestCount: number
   requestItems: RequestItem[]
+  requestShowAllCheckbox: HTMLInputElement
+  requestSortSelect: HTMLSelectElement
+  requestStatusSelect: HTMLSelectElement
+  requestSummary: HTMLSpanElement
+  requestTypeSelect: HTMLSelectElement
   requestList: HTMLUListElement
   requestListContainer: HTMLDivElement
   requestCountValue: HTMLSpanElement
@@ -60,6 +71,7 @@ const states = new Map<HTMLIFrameElement, BadgeState>()
 let displayMode: DisplayMode = DEFAULT_DISPLAY_MODE
 let limitMetric: LimitMetric = DEFAULT_LIMIT_METRIC
 let limitBytes = DEFAULT_LIMIT_BYTES
+let belowIframeFullWidth = DEFAULT_BELOW_IFRAME_FULL_WIDTH
 
 const formatBytes = (bytes: number): string => {
   if (bytes >= 1024 * 1024) {
@@ -82,15 +94,64 @@ const shortUrl = (url: string): string => {
   return `${url.slice(0, maxLength - 1)}…`
 }
 
+const syncTypeOptions = (state: BadgeState) => {
+  const selectedType = state.requestTypeSelect.value || "all"
+  const requestTypes = getRequestTypes(state.requestItems)
+
+  state.requestTypeSelect.textContent = ""
+  const allOption = document.createElement("option")
+  allOption.value = "all"
+  allOption.textContent = "All types"
+  state.requestTypeSelect.appendChild(allOption)
+
+  for (const requestType of requestTypes) {
+    const option = document.createElement("option")
+    option.value = requestType
+    option.textContent = requestType
+    state.requestTypeSelect.appendChild(option)
+  }
+
+  state.requestTypeSelect.value = requestTypes.includes(selectedType)
+    ? selectedType
+    : "all"
+}
+
 const updateRequestList = (state: BadgeState) => {
+  syncTypeOptions(state)
   state.requestList.textContent = ""
 
   if (state.requestItems.length === 0) {
+    state.requestSummary.textContent = "0/0 requests"
     state.requestListContainer.style.display = "none"
     return
   }
 
-  for (const item of state.requestItems) {
+  const sort = state.requestSortSelect.value
+  const status = state.requestStatusSelect.value
+  const result = filterAndSortRequestItems(
+    state.requestItems,
+    {
+      hostQuery: state.hostFilterInput.value,
+      showAll: state.requestShowAllCheckbox.checked,
+      sort:
+        sort === "resources_desc" || sort === "url_asc"
+          ? (sort as RequestSort)
+          : "transferred_desc",
+      status:
+        status === "done" || status === "pending"
+          ? (status as RequestStatusFilter)
+          : "all",
+      type: state.requestTypeSelect.value || "all"
+    },
+    REQUEST_LIST_LIMIT
+  )
+
+  state.requestSummary.textContent = `${result.visibleItems.length}/${result.filteredCount}/${result.totalCount} requests`
+  state.requestListContainer.style.display = state.isRequestListHoverActive
+    ? "flex"
+    : "none"
+
+  for (const item of result.visibleItems) {
     const row = document.createElement("li")
     row.setAttribute(
       "style",
@@ -109,6 +170,20 @@ const updateRequestList = (state: BadgeState) => {
 
     row.append(meta, url)
     state.requestList.appendChild(row)
+  }
+
+  if (result.visibleItems.length === 0) {
+    const empty = document.createElement("li")
+    empty.textContent = "No requests match current filters."
+    empty.style.color = "#d8dde7"
+    empty.style.listStyle = "none"
+    state.requestList.appendChild(empty)
+  } else if (result.hasMore && !state.requestShowAllCheckbox.checked) {
+    const more = document.createElement("li")
+    more.textContent = `Showing top ${REQUEST_LIST_LIMIT}. Enable Show all to see every request.`
+    more.style.color = "#d8dde7"
+    more.style.listStyle = "none"
+    state.requestList.appendChild(more)
   }
 }
 
@@ -149,6 +224,11 @@ const insertBadgeAfterIframe = (iframe: HTMLIFrameElement, badge: HTMLDivElement
 }
 
 const syncBadgeWidth = (iframe: HTMLIFrameElement, badge: HTMLDivElement) => {
+  if (belowIframeFullWidth) {
+    badge.style.width = "100%"
+    return
+  }
+
   const frameWidth = Math.round(iframe.getBoundingClientRect().width)
   badge.style.width = `${Math.max(frameWidth, 140)}px`
 }
@@ -235,9 +315,74 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "overflow: auto",
       "box-sizing: border-box",
       "padding: 6px 8px",
+      "flex-direction: column",
+      "gap: 6px",
       "background: rgba(0, 0, 0, 0.94)",
       "border-top: 1px solid rgba(125, 255, 106, 0.45)"
     ].join(";")
+  )
+
+  const requestTypeSelect = document.createElement("select")
+  requestTypeSelect.setAttribute(
+    "style",
+    "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+  )
+
+  const requestStatusSelect = document.createElement("select")
+  requestStatusSelect.setAttribute(
+    "style",
+    "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+  )
+  requestStatusSelect.innerHTML =
+    '<option value="all">All statuses</option><option value="done">Done</option><option value="pending">Pending</option>'
+
+  const requestSortSelect = document.createElement("select")
+  requestSortSelect.setAttribute(
+    "style",
+    "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+  )
+  requestSortSelect.innerHTML =
+    '<option value="transferred_desc">Sort: transferred</option><option value="resources_desc">Sort: resources</option><option value="url_asc">Sort: url</option>'
+
+  const hostFilterInput = document.createElement("input")
+  hostFilterInput.type = "text"
+  hostFilterInput.placeholder = "Host filter (contains)"
+  hostFilterInput.setAttribute(
+    "style",
+    "font-size:10px;background:#0d141f;color:#d8dde7;border:1px solid #345;border-radius:4px;padding:3px 4px"
+  )
+
+  const requestShowAllLabel = document.createElement("label")
+  requestShowAllLabel.setAttribute(
+    "style",
+    "display:flex;align-items:center;gap:6px;font-size:10px;color:#d8dde7"
+  )
+  const requestShowAllCheckbox = document.createElement("input")
+  requestShowAllCheckbox.type = "checkbox"
+  requestShowAllLabel.append(
+    requestShowAllCheckbox,
+    document.createTextNode("Show all")
+  )
+
+  const requestSummary = document.createElement("span")
+  requestSummary.textContent = "0/0 requests"
+  requestSummary.setAttribute(
+    "style",
+    "justify-self:end;font-size:10px;color:#9db7d2"
+  )
+
+  const requestFiltersBar = document.createElement("div")
+  requestFiltersBar.setAttribute(
+    "style",
+    "display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:center"
+  )
+  requestFiltersBar.append(
+    requestTypeSelect,
+    requestStatusSelect,
+    requestSortSelect,
+    hostFilterInput,
+    requestShowAllLabel,
+    requestSummary
   )
 
   const requestList = document.createElement("ul")
@@ -245,7 +390,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     "style",
     "margin:0;padding:0;display:flex;flex-direction:column;gap:2px"
   )
-  requestListContainer.appendChild(requestList)
+  requestListContainer.append(requestFiltersBar, requestList)
 
   const openButton = document.createElement("button")
   openButton.type = "button"
@@ -270,8 +415,15 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
 
   const state: BadgeState = {
     badge,
+    hostFilterInput,
+    isRequestListHoverActive: false,
     requestCount: 0,
     requestItems: [],
+    requestShowAllCheckbox,
+    requestSortSelect,
+    requestStatusSelect,
+    requestSummary,
+    requestTypeSelect,
     requestList,
     requestListContainer,
     requestCountValue,
@@ -283,13 +435,19 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     url: ""
   }
 
+  requestTypeSelect.addEventListener("change", () => updateRequestList(state))
+  requestStatusSelect.addEventListener("change", () => updateRequestList(state))
+  requestSortSelect.addEventListener("change", () => updateRequestList(state))
+  hostFilterInput.addEventListener("input", () => updateRequestList(state))
+  requestShowAllCheckbox.addEventListener("change", () => updateRequestList(state))
+
   openButton.addEventListener("click", () => openUrl(state.url))
   badge.addEventListener("mouseenter", () => {
-    if (state.requestList.childElementCount > 0) {
-      state.requestListContainer.style.display = "block"
-    }
+    state.isRequestListHoverActive = true
+    updateRequestList(state)
   })
   badge.addEventListener("mouseleave", () => {
+    state.isRequestListHoverActive = false
     state.requestListContainer.style.display = "none"
   })
 
@@ -344,6 +502,12 @@ const refreshAllColors = () => {
   }
 }
 
+const refreshAllBadgeWidths = () => {
+  for (const [iframe, state] of states) {
+    syncBadgeWidth(iframe, state.badge)
+  }
+}
+
 const handleStatsMessage = (event: MessageEvent) => {
   if (displayMode !== "below_iframe") {
     return
@@ -381,11 +545,13 @@ const handleStatsMessage = (event: MessageEvent) => {
 const setSettings = (
   nextDisplayMode: DisplayMode,
   nextLimitMetric: LimitMetric,
-  nextLimitBytes: number
+  nextLimitBytes: number,
+  nextBelowIframeFullWidth: boolean
 ) => {
   displayMode = nextDisplayMode
   limitMetric = nextLimitMetric
   limitBytes = nextLimitBytes
+  belowIframeFullWidth = nextBelowIframeFullWidth
 
   if (displayMode !== "below_iframe") {
     clearAllBadges()
@@ -393,16 +559,23 @@ const setSettings = (
   }
 
   refreshAllColors()
+  refreshAllBadgeWidths()
 }
 
 const loadSettings = () => {
   chrome.storage.sync.get(
-    [DISPLAY_MODE_KEY, LIMIT_METRIC_KEY, LIMIT_BYTES_KEY],
+    [
+      DISPLAY_MODE_KEY,
+      LIMIT_METRIC_KEY,
+      LIMIT_BYTES_KEY,
+      BELOW_IFRAME_FULL_WIDTH_KEY
+    ],
     (result) => {
       setSettings(
         parseDisplayMode(result[DISPLAY_MODE_KEY]),
         parseLimitMetric(result[LIMIT_METRIC_KEY]),
-        parseLimitBytes(result[LIMIT_BYTES_KEY])
+        parseLimitBytes(result[LIMIT_BYTES_KEY]),
+        parseBelowIframeFullWidth(result[BELOW_IFRAME_FULL_WIDTH_KEY])
       )
     }
   )
@@ -417,6 +590,7 @@ const observeSettingsChanges = () => {
     let nextDisplayMode = displayMode
     let nextLimitMetric = limitMetric
     let nextLimitBytes = limitBytes
+    let nextBelowIframeFullWidth = belowIframeFullWidth
 
     if (changes[DISPLAY_MODE_KEY]) {
       nextDisplayMode = parseDisplayMode(changes[DISPLAY_MODE_KEY].newValue)
@@ -430,7 +604,18 @@ const observeSettingsChanges = () => {
       nextLimitBytes = parseLimitBytes(changes[LIMIT_BYTES_KEY].newValue)
     }
 
-    setSettings(nextDisplayMode, nextLimitMetric, nextLimitBytes)
+    if (changes[BELOW_IFRAME_FULL_WIDTH_KEY]) {
+      nextBelowIframeFullWidth = parseBelowIframeFullWidth(
+        changes[BELOW_IFRAME_FULL_WIDTH_KEY].newValue
+      )
+    }
+
+    setSettings(
+      nextDisplayMode,
+      nextLimitMetric,
+      nextLimitBytes,
+      nextBelowIframeFullWidth
+    )
   })
 }
 

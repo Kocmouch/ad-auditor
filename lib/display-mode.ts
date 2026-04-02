@@ -2,6 +2,8 @@ export type DisplayMode = "inside_always" | "inside_hover" | "below_iframe"
 export type MeasurementMethod = "legacy_performance" | "enhanced_cdp"
 export type LimitMetric = "resources" | "transferred"
 
+export const SETTINGS_VERSION_KEY = "adAuditorSettingsVersion"
+export const CURRENT_SETTINGS_VERSION = 2
 export const DISPLAY_MODE_KEY = "adAuditorDisplayMode"
 export const STANDALONE_AMS_PREVIEW_BADGE_KEY =
   "adAuditorStandaloneAmsPreviewBadgeEnabled"
@@ -9,13 +11,17 @@ export const MEASUREMENT_METHOD_KEY = "adAuditorMeasurementMethod"
 export const LIMIT_METRIC_KEY = "adAuditorLimitMetric"
 export const LIMIT_BYTES_KEY = "adAuditorLimitBytes"
 export const DISABLE_CACHE_KEY = "adAuditorDisableCache"
+export const SHOW_CDP_STATUS_KEY = "adAuditorShowCdpStatus"
+export const BELOW_IFRAME_FULL_WIDTH_KEY = "adAuditorBelowIframeFullWidth"
 
-export const DEFAULT_DISPLAY_MODE: DisplayMode = "inside_always"
+export const DEFAULT_DISPLAY_MODE: DisplayMode = "below_iframe"
 export const DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED = false
 export const DEFAULT_MEASUREMENT_METHOD: MeasurementMethod = "enhanced_cdp"
 export const DEFAULT_LIMIT_METRIC: LimitMetric = "resources"
 export const DEFAULT_LIMIT_BYTES = Math.round(2.5 * 1024 * 1024)
 export const DEFAULT_DISABLE_CACHE = true
+export const DEFAULT_SHOW_CDP_STATUS = false
+export const DEFAULT_BELOW_IFRAME_FULL_WIDTH = false
 
 export const parseDisplayMode = (value: unknown): DisplayMode => {
   if (
@@ -67,4 +73,28 @@ export const parseDisableCache = (value: unknown): boolean => {
   }
 
   return DEFAULT_DISABLE_CACHE
+}
+
+export const parseShowCdpStatus = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  return DEFAULT_SHOW_CDP_STATUS
+}
+
+export const parseBelowIframeFullWidth = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  return DEFAULT_BELOW_IFRAME_FULL_WIDTH
+}
+
+export const parseSettingsVersion = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.floor(value)
+  }
+
+  return 0
 }
