@@ -3,19 +3,36 @@ import type { PlasmoCSConfig } from "plasmo"
 import {
   BELOW_IFRAME_FULL_WIDTH_KEY,
   DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+  DEFAULT_ENABLE_SNAPSHOTS,
+  DEFAULT_FOCUS_OFFENDERS,
   DEFAULT_LIMIT_BYTES,
   DEFAULT_LIMIT_METRIC,
+  DEFAULT_SHOW_ALERTS,
+  DEFAULT_SHOW_WATERFALL,
   DEFAULT_DISPLAY_MODE,
   DISPLAY_MODE_KEY,
+  ENABLE_SNAPSHOTS_KEY,
+  FOCUS_OFFENDERS_KEY,
   LIMIT_BYTES_KEY,
   LIMIT_METRIC_KEY,
+  SHOW_ALERTS_KEY,
+  SHOW_WATERFALL_KEY,
   type DisplayMode,
   type LimitMetric,
   parseDisplayMode,
   parseBelowIframeFullWidth,
+  parseEnableSnapshots,
+  parseFocusOffenders,
+  parseShowAlerts,
   parseLimitBytes,
-  parseLimitMetric
+  parseLimitMetric,
+  parseShowWaterfall
 } from "~lib/display-mode"
+import {
+  buildEnglishAlerts,
+  buildWaterfallLite,
+  filterFocusOffenders
+} from "~lib/insights"
 import {
   filterAndSortRequestItems,
   getRequestTypes,
@@ -46,6 +63,7 @@ type StatsPayload = {
 type RequestItem = RequestListItem
 
 type BadgeState = {
+  alertsContainer: HTMLDivElement
   badge: HTMLDivElement
   hostFilterInput: HTMLInputElement
   isRequestListHoverActive: boolean
@@ -53,9 +71,14 @@ type BadgeState = {
   requestItems: RequestItem[]
   requestShowAllCheckbox: HTMLInputElement
   requestSortSelect: HTMLSelectElement
+  requestSnapshotInfo: HTMLSpanElement
+  requestSnapshotRow: HTMLDivElement
+  requestSnapshotSaveButton: HTMLButtonElement
+  requestSnapshotCompareButton: HTMLButtonElement
   requestStatusSelect: HTMLSelectElement
   requestSummary: HTMLSpanElement
   requestTypeSelect: HTMLSelectElement
+  requestWaterfall: HTMLDivElement
   requestList: HTMLUListElement
   requestListContainer: HTMLDivElement
   requestCountValue: HTMLSpanElement
@@ -72,6 +95,14 @@ let displayMode: DisplayMode = DEFAULT_DISPLAY_MODE
 let limitMetric: LimitMetric = DEFAULT_LIMIT_METRIC
 let limitBytes = DEFAULT_LIMIT_BYTES
 let belowIframeFullWidth = DEFAULT_BELOW_IFRAME_FULL_WIDTH
+let snapshotsEnabled = DEFAULT_ENABLE_SNAPSHOTS
+let waterfallEnabled = DEFAULT_SHOW_WATERFALL
+let focusOffendersEnabled = DEFAULT_FOCUS_OFFENDERS
+let alertsEnabled = DEFAULT_SHOW_ALERTS
+const savedSnapshotsByUrl = new Map<
+  string,
+  { capturedAt: number; requestCount: number; resources: number; transferred: number }
+>()
 
 const formatBytes = (bytes: number): string => {
   if (bytes >= 1024 * 1024) {
@@ -116,20 +147,109 @@ const syncTypeOptions = (state: BadgeState) => {
     : "all"
 }
 
-const updateRequestList = (state: BadgeState) => {
-  syncTypeOptions(state)
-  state.requestList.textContent = ""
+const updateSnapshotInfo = (state: BadgeState) => {
+  if (!snapshotsEnabled) {
+    state.requestSnapshotRow.style.display = "none"
+    return
+  }
 
-  if (state.requestItems.length === 0) {
+  state.requestSnapshotRow.style.display = "flex"
+  const existing = savedSnapshotsByUrl.get(state.url)
+  state.requestSnapshotInfo.textContent = existing
+    ? `Saved ${new Date(existing.capturedAt).toLocaleTimeString()}`
+    : "No snapshot saved"
+}
+
+const saveSnapshot = (state: BadgeState) => {
+  if (!state.url) {
+    return
+  }
+
+  savedSnapshotsByUrl.set(state.url, {
+    capturedAt: Date.now(),
+    requestCount: state.requestCount,
+    resources: state.resources,
+    transferred: state.transferred
+  })
+  updateSnapshotInfo(state)
+}
+
+const compareSnapshot = (state: BadgeState) => {
+  if (!state.url) {
+    state.requestSnapshotInfo.textContent = "No snapshot target URL available."
+    return
+  }
+
+  const existing = savedSnapshotsByUrl.get(state.url)
+  if (!existing) {
+    state.requestSnapshotInfo.textContent = "No snapshot saved for this URL."
+    return
+  }
+
+  const reqDelta = state.requestCount - existing.requestCount
+  const trDelta = Math.round((state.transferred - existing.transferred) / 1024)
+  const resDelta = Math.round((state.resources - existing.resources) / 1024)
+  const withSign = (value: number) => (value >= 0 ? `+${value}` : `${value}`)
+
+  state.requestSnapshotInfo.textContent = `delta req ${withSign(reqDelta)}, delta tr ${withSign(trDelta)} KB, delta res ${withSign(resDelta)} KB`
+}
+
+const updateAlerts = (state: BadgeState) => {
+  if (!alertsEnabled) {
+    state.alertsContainer.style.display = "none"
+    state.alertsContainer.textContent = ""
+    return
+  }
+
+  const alerts = buildEnglishAlerts(
+    {
+      requests: state.requestCount,
+      resources: state.resources,
+      transferred: state.transferred
+    },
+    state.requestItems,
+    limitBytes
+  )
+
+  state.alertsContainer.textContent = ""
+  if (alerts.length === 0) {
+    state.alertsContainer.style.display = "none"
+    return
+  }
+
+  state.alertsContainer.style.display = "block"
+  for (const alertText of alerts) {
+    const row = document.createElement("div")
+    row.textContent = `- ${alertText}`
+    state.alertsContainer.appendChild(row)
+  }
+}
+
+const updateRequestList = (state: BadgeState) => {
+  const sourceItems = focusOffendersEnabled
+    ? filterFocusOffenders(state.requestItems, limitBytes)
+    : state.requestItems
+
+  syncTypeOptions({
+    ...state,
+    requestItems: sourceItems
+  })
+  state.requestList.textContent = ""
+  state.requestWaterfall.textContent = ""
+  updateSnapshotInfo(state)
+
+  if (sourceItems.length === 0) {
     state.requestSummary.textContent = "0/0 requests"
     state.requestListContainer.style.display = "none"
+    state.requestWaterfall.style.display = "none"
+    updateAlerts(state)
     return
   }
 
   const sort = state.requestSortSelect.value
   const status = state.requestStatusSelect.value
   const result = filterAndSortRequestItems(
-    state.requestItems,
+    sourceItems,
     {
       hostQuery: state.hostFilterInput.value,
       showAll: state.requestShowAllCheckbox.checked,
@@ -146,10 +266,43 @@ const updateRequestList = (state: BadgeState) => {
     REQUEST_LIST_LIMIT
   )
 
-  state.requestSummary.textContent = `${result.visibleItems.length}/${result.filteredCount}/${result.totalCount} requests`
+  state.requestSummary.textContent = `${result.visibleItems.length}/${result.filteredCount}/${result.totalCount} requests${focusOffendersEnabled ? " (focus)" : ""}`
   state.requestListContainer.style.display = state.isRequestListHoverActive
     ? "flex"
     : "none"
+
+  if (waterfallEnabled) {
+    const entries = buildWaterfallLite(result.visibleItems, 5)
+    state.requestWaterfall.style.display = entries.length > 0 ? "flex" : "none"
+    for (const entry of entries) {
+      const row = document.createElement("div")
+      row.setAttribute(
+        "style",
+        "display:flex;align-items:center;gap:6px;font-size:10px;color:#d8dde7"
+      )
+      const label = document.createElement("span")
+      label.textContent = shortUrl(entry.label)
+      label.style.width = "130px"
+      label.style.flexShrink = "0"
+      const barWrap = document.createElement("span")
+      barWrap.setAttribute(
+        "style",
+        "flex:1;height:6px;background:rgba(255,255,255,0.12);border-radius:999px;overflow:hidden"
+      )
+      const bar = document.createElement("span")
+      bar.style.display = "block"
+      bar.style.width = `${Math.round(entry.ratio * 100)}%`
+      bar.style.height = "100%"
+      bar.style.background = "#7dff6a"
+      barWrap.appendChild(bar)
+      const metric = document.createElement("span")
+      metric.textContent = formatBytes(entry.transferred)
+      row.append(label, barWrap, metric)
+      state.requestWaterfall.appendChild(row)
+    }
+  } else {
+    state.requestWaterfall.style.display = "none"
+  }
 
   for (const item of result.visibleItems) {
     const row = document.createElement("li")
@@ -185,6 +338,8 @@ const updateRequestList = (state: BadgeState) => {
     more.style.listStyle = "none"
     state.requestList.appendChild(more)
   }
+
+  updateAlerts(state)
 }
 
 const openUrl = (url: string) => {
@@ -241,6 +396,7 @@ const removeState = (iframe: HTMLIFrameElement) => {
 
   state.resizeObserver.disconnect()
   state.badge.remove()
+  state.alertsContainer.remove()
   states.delete(iframe)
 }
 
@@ -252,6 +408,9 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   const current = states.get(iframe)
   if (current) {
     insertBadgeAfterIframe(iframe, current.badge)
+    if (current.alertsContainer.previousSibling !== current.badge) {
+      current.badge.insertAdjacentElement("afterend", current.alertsContainer)
+    }
     syncBadgeWidth(iframe, current.badge)
     return current
   }
@@ -311,7 +470,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "left: 0",
       "bottom: 100%",
       "width: 100%",
-      "max-height: 220px",
+      "max-height: 280px",
       "overflow: auto",
       "box-sizing: border-box",
       "padding: 6px 8px",
@@ -320,6 +479,34 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "background: rgba(0, 0, 0, 0.94)",
       "border-top: 1px solid rgba(125, 255, 106, 0.45)"
     ].join(";")
+  )
+
+  const requestSnapshotRow = document.createElement("div")
+  requestSnapshotRow.setAttribute(
+    "style",
+    "display:none;align-items:center;gap:6px;flex-wrap:wrap"
+  )
+  const requestSnapshotSaveButton = document.createElement("button")
+  requestSnapshotSaveButton.type = "button"
+  requestSnapshotSaveButton.textContent = "Save"
+  requestSnapshotSaveButton.setAttribute(
+    "style",
+    "border:1px solid #7dff6a;background:transparent;color:#7dff6a;border-radius:4px;padding:2px 6px;font-size:10px;line-height:1.2;cursor:pointer"
+  )
+  const requestSnapshotCompareButton = document.createElement("button")
+  requestSnapshotCompareButton.type = "button"
+  requestSnapshotCompareButton.textContent = "Compare"
+  requestSnapshotCompareButton.setAttribute(
+    "style",
+    "border:1px solid #7dff6a;background:transparent;color:#7dff6a;border-radius:4px;padding:2px 6px;font-size:10px;line-height:1.2;cursor:pointer"
+  )
+  const requestSnapshotInfo = document.createElement("span")
+  requestSnapshotInfo.textContent = "No snapshot saved"
+  requestSnapshotInfo.setAttribute("style", "font-size:10px;color:#d8dde7")
+  requestSnapshotRow.append(
+    requestSnapshotSaveButton,
+    requestSnapshotCompareButton,
+    requestSnapshotInfo
   )
 
   const requestTypeSelect = document.createElement("select")
@@ -390,7 +577,17 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     "style",
     "margin:0;padding:0;display:flex;flex-direction:column;gap:2px"
   )
-  requestListContainer.append(requestFiltersBar, requestList)
+  const requestWaterfall = document.createElement("div")
+  requestWaterfall.setAttribute(
+    "style",
+    "display:none;flex-direction:column;gap:4px;padding:4px 0;border-top:1px dashed rgba(125,255,106,0.35)"
+  )
+  requestListContainer.append(
+    requestSnapshotRow,
+    requestFiltersBar,
+    requestWaterfall,
+    requestList
+  )
 
   const openButton = document.createElement("button")
   openButton.type = "button"
@@ -409,11 +606,27 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     ].join(";")
   )
 
+  const alertsContainer = document.createElement("div")
+  alertsContainer.setAttribute(
+    "style",
+    [
+      "display:none",
+      "padding:4px 8px",
+      "margin-top:2px",
+      "background:rgba(0,0,0,0.88)",
+      "border-top:1px solid rgba(125,255,106,0.35)",
+      "font-size:10px",
+      "line-height:1.35",
+      "color:#d8dde7"
+    ].join(";")
+  )
+
   const resizeObserver = new ResizeObserver(() => {
     syncBadgeWidth(iframe, badge)
   })
 
   const state: BadgeState = {
+    alertsContainer,
     badge,
     hostFilterInput,
     isRequestListHoverActive: false,
@@ -421,9 +634,14 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     requestItems: [],
     requestShowAllCheckbox,
     requestSortSelect,
+    requestSnapshotInfo,
+    requestSnapshotRow,
+    requestSnapshotSaveButton,
+    requestSnapshotCompareButton,
     requestStatusSelect,
     requestSummary,
     requestTypeSelect,
+    requestWaterfall,
     requestList,
     requestListContainer,
     requestCountValue,
@@ -440,6 +658,8 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   requestSortSelect.addEventListener("change", () => updateRequestList(state))
   hostFilterInput.addEventListener("input", () => updateRequestList(state))
   requestShowAllCheckbox.addEventListener("change", () => updateRequestList(state))
+  requestSnapshotSaveButton.addEventListener("click", () => saveSnapshot(state))
+  requestSnapshotCompareButton.addEventListener("click", () => compareSnapshot(state))
 
   openButton.addEventListener("click", () => openUrl(state.url))
   badge.addEventListener("mouseenter", () => {
@@ -454,6 +674,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   badge.append(statsContainer, openButton, requestListContainer)
 
   insertBadgeAfterIframe(iframe, badge)
+  badge.insertAdjacentElement("afterend", alertsContainer)
   syncBadgeWidth(iframe, badge)
   resizeObserver.observe(iframe)
 
@@ -492,6 +713,9 @@ const cleanupDetachedFrames = () => {
     }
 
     insertBadgeAfterIframe(iframe, state.badge)
+    if (state.alertsContainer.previousSibling !== state.badge) {
+      state.badge.insertAdjacentElement("afterend", state.alertsContainer)
+    }
     syncBadgeWidth(iframe, state.badge)
   })
 }
@@ -499,6 +723,12 @@ const cleanupDetachedFrames = () => {
 const refreshAllColors = () => {
   for (const state of states.values()) {
     applyUsageColor(state)
+  }
+}
+
+const refreshAllDetails = () => {
+  for (const state of states.values()) {
+    updateRequestList(state)
   }
 }
 
@@ -546,12 +776,20 @@ const setSettings = (
   nextDisplayMode: DisplayMode,
   nextLimitMetric: LimitMetric,
   nextLimitBytes: number,
-  nextBelowIframeFullWidth: boolean
+  nextBelowIframeFullWidth: boolean,
+  nextSnapshotsEnabled: boolean,
+  nextWaterfallEnabled: boolean,
+  nextFocusOffendersEnabled: boolean,
+  nextAlertsEnabled: boolean
 ) => {
   displayMode = nextDisplayMode
   limitMetric = nextLimitMetric
   limitBytes = nextLimitBytes
   belowIframeFullWidth = nextBelowIframeFullWidth
+  snapshotsEnabled = nextSnapshotsEnabled
+  waterfallEnabled = nextWaterfallEnabled
+  focusOffendersEnabled = nextFocusOffendersEnabled
+  alertsEnabled = nextAlertsEnabled
 
   if (displayMode !== "below_iframe") {
     clearAllBadges()
@@ -560,6 +798,7 @@ const setSettings = (
 
   refreshAllColors()
   refreshAllBadgeWidths()
+  refreshAllDetails()
 }
 
 const loadSettings = () => {
@@ -568,14 +807,22 @@ const loadSettings = () => {
       DISPLAY_MODE_KEY,
       LIMIT_METRIC_KEY,
       LIMIT_BYTES_KEY,
-      BELOW_IFRAME_FULL_WIDTH_KEY
+      BELOW_IFRAME_FULL_WIDTH_KEY,
+      ENABLE_SNAPSHOTS_KEY,
+      SHOW_WATERFALL_KEY,
+      FOCUS_OFFENDERS_KEY,
+      SHOW_ALERTS_KEY
     ],
     (result) => {
       setSettings(
         parseDisplayMode(result[DISPLAY_MODE_KEY]),
         parseLimitMetric(result[LIMIT_METRIC_KEY]),
         parseLimitBytes(result[LIMIT_BYTES_KEY]),
-        parseBelowIframeFullWidth(result[BELOW_IFRAME_FULL_WIDTH_KEY])
+        parseBelowIframeFullWidth(result[BELOW_IFRAME_FULL_WIDTH_KEY]),
+        parseEnableSnapshots(result[ENABLE_SNAPSHOTS_KEY]),
+        parseShowWaterfall(result[SHOW_WATERFALL_KEY]),
+        parseFocusOffenders(result[FOCUS_OFFENDERS_KEY]),
+        parseShowAlerts(result[SHOW_ALERTS_KEY])
       )
     }
   )
@@ -591,6 +838,10 @@ const observeSettingsChanges = () => {
     let nextLimitMetric = limitMetric
     let nextLimitBytes = limitBytes
     let nextBelowIframeFullWidth = belowIframeFullWidth
+    let nextSnapshotsEnabled = snapshotsEnabled
+    let nextWaterfallEnabled = waterfallEnabled
+    let nextFocusOffendersEnabled = focusOffendersEnabled
+    let nextAlertsEnabled = alertsEnabled
 
     if (changes[DISPLAY_MODE_KEY]) {
       nextDisplayMode = parseDisplayMode(changes[DISPLAY_MODE_KEY].newValue)
@@ -610,11 +861,35 @@ const observeSettingsChanges = () => {
       )
     }
 
+    if (changes[ENABLE_SNAPSHOTS_KEY]) {
+      nextSnapshotsEnabled = parseEnableSnapshots(
+        changes[ENABLE_SNAPSHOTS_KEY].newValue
+      )
+    }
+
+    if (changes[SHOW_WATERFALL_KEY]) {
+      nextWaterfallEnabled = parseShowWaterfall(changes[SHOW_WATERFALL_KEY].newValue)
+    }
+
+    if (changes[FOCUS_OFFENDERS_KEY]) {
+      nextFocusOffendersEnabled = parseFocusOffenders(
+        changes[FOCUS_OFFENDERS_KEY].newValue
+      )
+    }
+
+    if (changes[SHOW_ALERTS_KEY]) {
+      nextAlertsEnabled = parseShowAlerts(changes[SHOW_ALERTS_KEY].newValue)
+    }
+
     setSettings(
       nextDisplayMode,
       nextLimitMetric,
       nextLimitBytes,
-      nextBelowIframeFullWidth
+      nextBelowIframeFullWidth,
+      nextSnapshotsEnabled,
+      nextWaterfallEnabled,
+      nextFocusOffendersEnabled,
+      nextAlertsEnabled
     )
   })
 }

@@ -27,11 +27,17 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
   - `Disable cache on preview domains` (default enabled)
 - Optional popup diagnostics:
   - `Show CDP status` (`Attached/Fallback/Error`)
+- Optional analysis features (all default OFF):
+  - `Enable snapshots & compare`
+  - `Show waterfall lite`
+  - `Focus offenders first`
+  - `Show alerts`
 - Below-iframe layout option:
   - choose iframe-width bar or full-page width (`width: 100%`)
 - Welcome page:
   - opens automatically on first install
   - available anytime from popup (`Open setup guide`)
+  - includes interactive onboarding checklist and quick actions
 
 ## Defaults and Settings Migration
 
@@ -40,6 +46,7 @@ On fresh install, the extension saves defaults to `chrome.storage.sync`:
 - `displayMode = below_iframe`
 - `measurementMethod = enhanced_cdp`
 - `disableCache = true`
+- `snapshots/waterfall/focus-offenders/show-alerts = false`
 
 Background script also runs versioned settings migration to backfill missing keys on existing installs.
 

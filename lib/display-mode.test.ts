@@ -4,14 +4,22 @@ import {
   DEFAULT_BELOW_IFRAME_FULL_WIDTH,
   DEFAULT_DISABLE_CACHE,
   DEFAULT_DISPLAY_MODE,
+  DEFAULT_ENABLE_SNAPSHOTS,
+  DEFAULT_FOCUS_OFFENDERS,
   DEFAULT_MEASUREMENT_METHOD,
+  DEFAULT_SHOW_ALERTS,
   DEFAULT_SHOW_CDP_STATUS,
+  DEFAULT_SHOW_WATERFALL,
   parseBelowIframeFullWidth,
   parseDisableCache,
   parseDisplayMode,
+  parseEnableSnapshots,
+  parseFocusOffenders,
   parseMeasurementMethod,
   parseSettingsVersion,
-  parseShowCdpStatus
+  parseShowAlerts,
+  parseShowCdpStatus,
+  parseShowWaterfall
 } from "./display-mode"
 
 describe("display-mode defaults", () => {
@@ -23,6 +31,10 @@ describe("display-mode defaults", () => {
     expect(parseBelowIframeFullWidth(undefined)).toBe(
       DEFAULT_BELOW_IFRAME_FULL_WIDTH
     )
+    expect(parseEnableSnapshots(undefined)).toBe(DEFAULT_ENABLE_SNAPSHOTS)
+    expect(parseShowWaterfall(undefined)).toBe(DEFAULT_SHOW_WATERFALL)
+    expect(parseFocusOffenders(undefined)).toBe(DEFAULT_FOCUS_OFFENDERS)
+    expect(parseShowAlerts(undefined)).toBe(DEFAULT_SHOW_ALERTS)
   })
 
   test("parses settings version safely", () => {

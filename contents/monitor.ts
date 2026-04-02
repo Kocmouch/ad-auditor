@@ -1,25 +1,42 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 import {
+  DEFAULT_ENABLE_SNAPSHOTS,
+  DEFAULT_FOCUS_OFFENDERS,
   DEFAULT_LIMIT_BYTES,
   DEFAULT_LIMIT_METRIC,
   DEFAULT_MEASUREMENT_METHOD,
+  DEFAULT_SHOW_ALERTS,
+  DEFAULT_SHOW_WATERFALL,
   DEFAULT_DISPLAY_MODE,
   DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED,
   DISPLAY_MODE_KEY,
+  ENABLE_SNAPSHOTS_KEY,
+  FOCUS_OFFENDERS_KEY,
   LIMIT_BYTES_KEY,
   LIMIT_METRIC_KEY,
   MEASUREMENT_METHOD_KEY,
+  SHOW_ALERTS_KEY,
+  SHOW_WATERFALL_KEY,
   STANDALONE_AMS_PREVIEW_BADGE_KEY,
   type DisplayMode,
   type LimitMetric,
   type MeasurementMethod,
   parseDisplayMode,
+  parseEnableSnapshots,
+  parseFocusOffenders,
+  parseShowAlerts,
   parseLimitBytes,
   parseLimitMetric,
   parseMeasurementMethod,
+  parseShowWaterfall,
   parseStandaloneAmsPreviewBadgeEnabled
 } from "~lib/display-mode"
+import {
+  buildEnglishAlerts,
+  buildWaterfallLite,
+  filterFocusOffenders
+} from "~lib/insights"
 import {
   filterAndSortRequestItems,
   getRequestTypes,
@@ -67,10 +84,20 @@ let measurementMethod: MeasurementMethod = DEFAULT_MEASUREMENT_METHOD
 let standaloneAmsPreviewBadgeEnabled = DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED
 let limitMetric: LimitMetric = DEFAULT_LIMIT_METRIC
 let limitBytes = DEFAULT_LIMIT_BYTES
+let snapshotsEnabled = DEFAULT_ENABLE_SNAPSHOTS
+let waterfallEnabled = DEFAULT_SHOW_WATERFALL
+let focusOffendersEnabled = DEFAULT_FOCUS_OFFENDERS
+let alertsEnabled = DEFAULT_SHOW_ALERTS
 
 let badge: HTMLDivElement | null = null
 let requestListContainer: HTMLDivElement | null = null
 let requestListElement: HTMLUListElement | null = null
+let alertsContainer: HTMLDivElement | null = null
+let waterfallContainer: HTMLDivElement | null = null
+let snapshotBar: HTMLDivElement | null = null
+let snapshotInfo: HTMLSpanElement | null = null
+let saveSnapshotButton: HTMLButtonElement | null = null
+let compareSnapshotButton: HTMLButtonElement | null = null
 let requestTypeSelect: HTMLSelectElement | null = null
 let requestStatusSelect: HTMLSelectElement | null = null
 let requestSortSelect: HTMLSelectElement | null = null
@@ -85,6 +112,13 @@ let isHoverActive = false
 let isRequestListHoverActive = false
 let lastStatsPostAt = 0
 let latestRequestItems: RequestItem[] = []
+let latestTotalsForActions: Totals = {
+  requestItems: [],
+  requests: 0,
+  resources: 0,
+  transferred: 0
+}
+const savedSnapshotsByUrl = new Map<string, Totals & { capturedAt: number }>()
 
 let legacyTotals: Totals = {
   requestItems: [],
@@ -123,6 +157,56 @@ const shortUrl = (url: string): string => {
   return `${url.slice(0, maxLength - 1)}…`
 }
 
+const getCurrentAuditUrl = (): string => getEffectiveAuditUrl()
+
+const updateSnapshotControls = () => {
+  if (!snapshotBar || !snapshotInfo || !saveSnapshotButton || !compareSnapshotButton) {
+    return
+  }
+
+  if (!snapshotsEnabled) {
+    snapshotBar.style.display = "none"
+    return
+  }
+
+  snapshotBar.style.display = "flex"
+  const currentUrl = getCurrentAuditUrl()
+  const existing = savedSnapshotsByUrl.get(currentUrl)
+  snapshotInfo.textContent = existing
+    ? `Saved ${new Date(existing.capturedAt).toLocaleTimeString()}`
+    : "No snapshot saved"
+}
+
+const saveCurrentSnapshot = () => {
+  const currentUrl = getCurrentAuditUrl()
+  savedSnapshotsByUrl.set(currentUrl, {
+    ...latestTotalsForActions,
+    capturedAt: Date.now()
+  })
+
+  updateSnapshotControls()
+}
+
+const compareWithSavedSnapshot = () => {
+  if (!snapshotInfo) {
+    return
+  }
+
+  const currentUrl = getCurrentAuditUrl()
+  const saved = savedSnapshotsByUrl.get(currentUrl)
+  if (!saved) {
+    snapshotInfo.textContent = "No snapshot saved for this URL."
+    return
+  }
+
+  const transferredDelta = latestTotalsForActions.transferred - saved.transferred
+  const resourcesDelta = latestTotalsForActions.resources - saved.resources
+  const requestsDelta = latestTotalsForActions.requests - saved.requests
+  const formatSigned = (value: number) => (value >= 0 ? `+${value}` : `${value}`)
+
+  snapshotInfo.textContent = `delta req ${formatSigned(requestsDelta)}, delta tr ${formatSigned(Math.round(transferredDelta / 1024))} KB, delta res ${formatSigned(Math.round(resourcesDelta / 1024))} KB`
+}
+
 const syncRequestTypeOptions = (items: RequestItem[]) => {
   if (!requestTypeSelect) {
     return
@@ -149,10 +233,54 @@ const syncRequestTypeOptions = (items: RequestItem[]) => {
     : "all"
 }
 
+const renderWaterfallLite = (items: RequestItem[]) => {
+  if (!waterfallContainer) {
+    return
+  }
+
+  if (!waterfallEnabled || items.length === 0) {
+    waterfallContainer.style.display = "none"
+    waterfallContainer.textContent = ""
+    return
+  }
+
+  const entries = buildWaterfallLite(items, 5)
+  waterfallContainer.textContent = ""
+  waterfallContainer.style.display = "flex"
+
+  for (const entry of entries) {
+    const row = document.createElement("div")
+    row.setAttribute(
+      "style",
+      "display:flex;align-items:center;gap:6px;font-size:10px;color:#d8dde7"
+    )
+    const label = document.createElement("span")
+    label.textContent = shortUrl(entry.label)
+    label.style.width = "130px"
+    label.style.flexShrink = "0"
+    const barWrap = document.createElement("span")
+    barWrap.setAttribute(
+      "style",
+      "flex:1;height:6px;background:rgba(255,255,255,0.12);border-radius:999px;overflow:hidden"
+    )
+    const bar = document.createElement("span")
+    bar.style.display = "block"
+    bar.style.width = `${Math.round(entry.ratio * 100)}%`
+    bar.style.height = "100%"
+    bar.style.background = "#7dff6a"
+    barWrap.appendChild(bar)
+    const metric = document.createElement("span")
+    metric.textContent = formatBytes(entry.transferred)
+    row.append(label, barWrap, metric)
+    waterfallContainer.appendChild(row)
+  }
+}
+
 const renderRequestListUi = () => {
   if (
     !requestListContainer ||
     !requestListElement ||
+    !waterfallContainer ||
     !requestTypeSelect ||
     !requestStatusSelect ||
     !requestSortSelect ||
@@ -163,19 +291,24 @@ const renderRequestListUi = () => {
     return
   }
 
-  syncRequestTypeOptions(latestRequestItems)
+  const sourceItems = focusOffendersEnabled
+    ? filterFocusOffenders(latestRequestItems, limitBytes)
+    : latestRequestItems
+
+  syncRequestTypeOptions(sourceItems)
   requestListElement.textContent = ""
 
-  if (latestRequestItems.length === 0) {
+  if (sourceItems.length === 0) {
     requestSummary.textContent = "0/0 requests"
     requestListContainer.style.display = "none"
+    renderWaterfallLite([])
     return
   }
 
   const sort = requestSortSelect.value
   const status = requestStatusSelect.value
   const result = filterAndSortRequestItems(
-    latestRequestItems,
+    sourceItems,
     {
       hostQuery: requestHostInput.value,
       showAll: requestShowAllCheckbox.checked,
@@ -192,8 +325,9 @@ const renderRequestListUi = () => {
     REQUEST_LIST_LIMIT
   )
 
-  requestSummary.textContent = `${result.visibleItems.length}/${result.filteredCount}/${result.totalCount} requests`
+  requestSummary.textContent = `${result.visibleItems.length}/${result.filteredCount}/${result.totalCount} requests${focusOffendersEnabled ? " (focus)" : ""}`
   requestListContainer.style.display = isRequestListHoverActive ? "flex" : "none"
+  renderWaterfallLite(result.visibleItems)
 
   for (const item of result.visibleItems) {
     const row = document.createElement("li")
@@ -233,6 +367,7 @@ const renderRequestListUi = () => {
 
 const updateRequestListUi = (items: RequestItem[]) => {
   latestRequestItems = items
+  updateSnapshotControls()
   renderRequestListUi()
 }
 
@@ -403,6 +538,12 @@ const ensureBadge = (showOpenButton: boolean) => {
 
   if (
     !badge ||
+    !alertsContainer ||
+    !waterfallContainer ||
+    !snapshotBar ||
+    !snapshotInfo ||
+    !saveSnapshotButton ||
+    !compareSnapshotButton ||
     !requestListContainer ||
     !requestListElement ||
     !requestsValueSpan ||
@@ -470,7 +611,7 @@ const ensureBadge = (showOpenButton: boolean) => {
         "left: 0",
         "bottom: 100%",
         "width: 100%",
-        "max-height: 220px",
+        "max-height: 280px",
         "overflow: auto",
         "box-sizing: border-box",
         "padding: 6px 8px",
@@ -479,6 +620,34 @@ const ensureBadge = (showOpenButton: boolean) => {
         "background: rgba(0, 0, 0, 0.94)",
         "border-top: 1px solid rgba(125, 255, 106, 0.45)"
       ].join(";")
+    )
+
+    const nextSnapshotBar = document.createElement("div")
+    nextSnapshotBar.setAttribute(
+      "style",
+      "display:none;align-items:center;gap:6px;flex-wrap:wrap"
+    )
+    const nextSaveSnapshotButton = document.createElement("button")
+    nextSaveSnapshotButton.type = "button"
+    nextSaveSnapshotButton.textContent = "Save"
+    nextSaveSnapshotButton.setAttribute(
+      "style",
+      "border:1px solid #7dff6a;background:transparent;color:#7dff6a;border-radius:4px;padding:2px 6px;font-size:10px;line-height:1.2;cursor:pointer"
+    )
+    const nextCompareSnapshotButton = document.createElement("button")
+    nextCompareSnapshotButton.type = "button"
+    nextCompareSnapshotButton.textContent = "Compare"
+    nextCompareSnapshotButton.setAttribute(
+      "style",
+      "border:1px solid #7dff6a;background:transparent;color:#7dff6a;border-radius:4px;padding:2px 6px;font-size:10px;line-height:1.2;cursor:pointer"
+    )
+    const nextSnapshotInfo = document.createElement("span")
+    nextSnapshotInfo.textContent = "No snapshot saved"
+    nextSnapshotInfo.setAttribute("style", "font-size:10px;color:#d8dde7")
+    nextSnapshotBar.append(
+      nextSaveSnapshotButton,
+      nextCompareSnapshotButton,
+      nextSnapshotInfo
     )
 
     const nextRequestFiltersBar = document.createElement("div")
@@ -548,7 +717,18 @@ const ensureBadge = (showOpenButton: boolean) => {
       "margin:0;padding:0;display:flex;flex-direction:column;gap:2px"
     )
 
-    nextRequestListContainer.append(nextRequestFiltersBar, nextRequestList)
+    const nextWaterfallContainer = document.createElement("div")
+    nextWaterfallContainer.setAttribute(
+      "style",
+      "display:none;flex-direction:column;gap:4px;padding:4px 0;border-top:1px dashed rgba(125,255,106,0.35)"
+    )
+
+    nextRequestListContainer.append(
+      nextSnapshotBar,
+      nextRequestFiltersBar,
+      nextWaterfallContainer,
+      nextRequestList
+    )
 
     const nextOpenButton = document.createElement("button")
     nextOpenButton.type = "button"
@@ -569,13 +749,39 @@ const ensureBadge = (showOpenButton: boolean) => {
     )
     nextOpenButton.addEventListener("click", openInNewTab)
 
-    nextBadge.append(statsContainer, nextOpenButton, nextRequestListContainer)
+    const nextAlertsContainer = document.createElement("div")
+    nextAlertsContainer.setAttribute(
+      "style",
+      [
+        "display:none",
+        "position:absolute",
+        "left:0",
+        "top:100%",
+        "width:100%",
+        "box-sizing:border-box",
+        "padding:4px 8px",
+        "background:rgba(0,0,0,0.88)",
+        "border-top:1px solid rgba(125,255,106,0.35)",
+        "font-size:10px",
+        "line-height:1.35",
+        "color:#d8dde7"
+      ].join(";")
+    )
+
+    nextBadge.append(
+      statsContainer,
+      nextOpenButton,
+      nextRequestListContainer,
+      nextAlertsContainer
+    )
 
     nextRequestTypeSelect.addEventListener("change", renderRequestListUi)
     nextRequestStatusSelect.addEventListener("change", renderRequestListUi)
     nextRequestSortSelect.addEventListener("change", renderRequestListUi)
     nextRequestHostInput.addEventListener("input", renderRequestListUi)
     nextRequestShowAll.addEventListener("change", renderRequestListUi)
+    nextSaveSnapshotButton.addEventListener("click", saveCurrentSnapshot)
+    nextCompareSnapshotButton.addEventListener("click", compareWithSavedSnapshot)
 
     nextBadge.addEventListener("mouseenter", () => {
       isRequestListHoverActive = true
@@ -598,6 +804,12 @@ const ensureBadge = (showOpenButton: boolean) => {
     badge = nextBadge
     requestListContainer = nextRequestListContainer
     requestListElement = nextRequestList
+    alertsContainer = nextAlertsContainer
+    waterfallContainer = nextWaterfallContainer
+    snapshotBar = nextSnapshotBar
+    snapshotInfo = nextSnapshotInfo
+    saveSnapshotButton = nextSaveSnapshotButton
+    compareSnapshotButton = nextCompareSnapshotButton
     requestTypeSelect = nextRequestTypeSelect
     requestStatusSelect = nextRequestStatusSelect
     requestSortSelect = nextRequestSortSelect
@@ -621,6 +833,12 @@ const removeBadge = () => {
   badge = null
   requestListContainer = null
   requestListElement = null
+  alertsContainer = null
+  waterfallContainer = null
+  snapshotBar = null
+  snapshotInfo = null
+  saveSnapshotButton = null
+  compareSnapshotButton = null
   requestTypeSelect = null
   requestStatusSelect = null
   requestSortSelect = null
@@ -633,6 +851,12 @@ const removeBadge = () => {
   openButton = null
   isRequestListHoverActive = false
   latestRequestItems = []
+  latestTotalsForActions = {
+    requestItems: [],
+    requests: 0,
+    resources: 0,
+    transferred: 0
+  }
 }
 
 const applyUsageColor = (totals: Totals) => {
@@ -652,6 +876,33 @@ const applyUsageColor = (totals: Totals) => {
 
   transferredValueSpan.style.color = targetColor
   resourcesValueSpan.style.color = "#ffffff"
+}
+
+const updateAlertsUi = (totals: Totals) => {
+  if (!alertsContainer) {
+    return
+  }
+
+  if (!alertsEnabled) {
+    alertsContainer.style.display = "none"
+    alertsContainer.textContent = ""
+    return
+  }
+
+  const alerts = buildEnglishAlerts(totals, totals.requestItems, limitBytes)
+  if (alerts.length === 0) {
+    alertsContainer.style.display = "none"
+    alertsContainer.textContent = ""
+    return
+  }
+
+  alertsContainer.textContent = ""
+  alertsContainer.style.display = "block"
+  for (const alertText of alerts) {
+    const line = document.createElement("div")
+    line.textContent = `- ${alertText}`
+    alertsContainer.appendChild(line)
+  }
 }
 
 const getSelectedTotals = (): Totals => {
@@ -695,6 +946,7 @@ const postStatsToTop = (totals: Totals) => {
 
 const render = () => {
   const totals = getSelectedTotals()
+  latestTotalsForActions = totals
   const transferredText = formatBytes(totals.transferred)
   const resourcesText = formatBytes(totals.resources)
 
@@ -715,6 +967,7 @@ const render = () => {
       requestsValueSpan.textContent = ` (${totals.requests} req)`
     }
     updateRequestListUi(totals.requestItems)
+    updateAlertsUi(totals)
     applyUsageColor(totals)
     applyBadgeVisibility(false)
     return
@@ -737,6 +990,7 @@ const render = () => {
     requestsValueSpan.textContent = ` (${totals.requests} req)`
   }
   updateRequestListUi(totals.requestItems)
+  updateAlertsUi(totals)
   applyUsageColor(totals)
   applyBadgeVisibility(true)
 }
@@ -841,13 +1095,22 @@ const setSettings = (
   nextMeasurementMethod: MeasurementMethod,
   nextStandaloneAmsPreviewBadgeEnabled: boolean,
   nextLimitMetric: LimitMetric,
-  nextLimitBytes: number
+  nextLimitBytes: number,
+  nextSnapshotsEnabled: boolean,
+  nextWaterfallEnabled: boolean,
+  nextFocusOffendersEnabled: boolean,
+  nextAlertsEnabled: boolean
 ) => {
   displayMode = nextDisplayMode
   measurementMethod = nextMeasurementMethod
   standaloneAmsPreviewBadgeEnabled = nextStandaloneAmsPreviewBadgeEnabled
   limitMetric = nextLimitMetric
   limitBytes = nextLimitBytes
+  snapshotsEnabled = nextSnapshotsEnabled
+  waterfallEnabled = nextWaterfallEnabled
+  focusOffendersEnabled = nextFocusOffendersEnabled
+  alertsEnabled = nextAlertsEnabled
+  updateSnapshotControls()
   syncEnhancedPolling()
   render()
 }
@@ -858,6 +1121,10 @@ const loadSettings = () => {
       DISPLAY_MODE_KEY,
       MEASUREMENT_METHOD_KEY,
       STANDALONE_AMS_PREVIEW_BADGE_KEY,
+      ENABLE_SNAPSHOTS_KEY,
+      SHOW_WATERFALL_KEY,
+      FOCUS_OFFENDERS_KEY,
+      SHOW_ALERTS_KEY,
       LIMIT_METRIC_KEY,
       LIMIT_BYTES_KEY
     ],
@@ -869,7 +1136,11 @@ const loadSettings = () => {
           result[STANDALONE_AMS_PREVIEW_BADGE_KEY]
         ),
         parseLimitMetric(result[LIMIT_METRIC_KEY]),
-        parseLimitBytes(result[LIMIT_BYTES_KEY])
+        parseLimitBytes(result[LIMIT_BYTES_KEY]),
+        parseEnableSnapshots(result[ENABLE_SNAPSHOTS_KEY]),
+        parseShowWaterfall(result[SHOW_WATERFALL_KEY]),
+        parseFocusOffenders(result[FOCUS_OFFENDERS_KEY]),
+        parseShowAlerts(result[SHOW_ALERTS_KEY])
       )
     }
   )
@@ -886,6 +1157,10 @@ const observeSettingsChanges = () => {
     let nextStandaloneAmsPreviewBadgeEnabled = standaloneAmsPreviewBadgeEnabled
     let nextLimitMetric = limitMetric
     let nextLimitBytes = limitBytes
+    let nextSnapshotsEnabled = snapshotsEnabled
+    let nextWaterfallEnabled = waterfallEnabled
+    let nextFocusOffendersEnabled = focusOffendersEnabled
+    let nextAlertsEnabled = alertsEnabled
 
     if (changes[DISPLAY_MODE_KEY]) {
       nextDisplayMode = parseDisplayMode(changes[DISPLAY_MODE_KEY].newValue)
@@ -911,12 +1186,38 @@ const observeSettingsChanges = () => {
       nextLimitBytes = parseLimitBytes(changes[LIMIT_BYTES_KEY].newValue)
     }
 
+    if (changes[ENABLE_SNAPSHOTS_KEY]) {
+      nextSnapshotsEnabled = parseEnableSnapshots(
+        changes[ENABLE_SNAPSHOTS_KEY].newValue
+      )
+    }
+
+    if (changes[SHOW_WATERFALL_KEY]) {
+      nextWaterfallEnabled = parseShowWaterfall(
+        changes[SHOW_WATERFALL_KEY].newValue
+      )
+    }
+
+    if (changes[FOCUS_OFFENDERS_KEY]) {
+      nextFocusOffendersEnabled = parseFocusOffenders(
+        changes[FOCUS_OFFENDERS_KEY].newValue
+      )
+    }
+
+    if (changes[SHOW_ALERTS_KEY]) {
+      nextAlertsEnabled = parseShowAlerts(changes[SHOW_ALERTS_KEY].newValue)
+    }
+
     setSettings(
       nextDisplayMode,
       nextMeasurementMethod,
       nextStandaloneAmsPreviewBadgeEnabled,
       nextLimitMetric,
-      nextLimitBytes
+      nextLimitBytes,
+      nextSnapshotsEnabled,
+      nextWaterfallEnabled,
+      nextFocusOffendersEnabled,
+      nextAlertsEnabled
     )
   })
 }

@@ -3,19 +3,27 @@ import { useEffect, useMemo, useState } from "react"
 import {
   BELOW_IFRAME_FULL_WIDTH_KEY,
   DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+  DEFAULT_ENABLE_SNAPSHOTS,
+  DEFAULT_FOCUS_OFFENDERS,
+  DEFAULT_SHOW_ALERTS,
   DEFAULT_SHOW_CDP_STATUS,
   DEFAULT_DISABLE_CACHE,
   DEFAULT_LIMIT_BYTES,
   DEFAULT_LIMIT_METRIC,
   DEFAULT_MEASUREMENT_METHOD,
+  DEFAULT_SHOW_WATERFALL,
   DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED,
   DEFAULT_DISPLAY_MODE,
   DISABLE_CACHE_KEY,
   DISPLAY_MODE_KEY,
+  ENABLE_SNAPSHOTS_KEY,
+  FOCUS_OFFENDERS_KEY,
   LIMIT_BYTES_KEY,
   LIMIT_METRIC_KEY,
   MEASUREMENT_METHOD_KEY,
+  SHOW_ALERTS_KEY,
   SHOW_CDP_STATUS_KEY,
+  SHOW_WATERFALL_KEY,
   STANDALONE_AMS_PREVIEW_BADGE_KEY,
   type DisplayMode,
   type LimitMetric,
@@ -26,7 +34,11 @@ import {
   parseLimitMetric,
   parseMeasurementMethod,
   parseBelowIframeFullWidth,
+  parseEnableSnapshots,
+  parseFocusOffenders,
+  parseShowAlerts,
   parseShowCdpStatus,
+  parseShowWaterfall,
   parseStandaloneAmsPreviewBadgeEnabled
 } from "~lib/display-mode"
 
@@ -140,6 +152,16 @@ function IndexPopup() {
   const [showCdpStatus, setShowCdpStatus] = useState<boolean>(
     DEFAULT_SHOW_CDP_STATUS
   )
+  const [snapshotsEnabled, setSnapshotsEnabled] = useState<boolean>(
+    DEFAULT_ENABLE_SNAPSHOTS
+  )
+  const [waterfallEnabled, setWaterfallEnabled] = useState<boolean>(
+    DEFAULT_SHOW_WATERFALL
+  )
+  const [focusOffendersEnabled, setFocusOffendersEnabled] = useState<boolean>(
+    DEFAULT_FOCUS_OFFENDERS
+  )
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(DEFAULT_SHOW_ALERTS)
   const [cdpStatus, setCdpStatus] = useState<CdpStatus>("idle")
   const [cdpStatusReason, setCdpStatusReason] = useState("")
   const [belowIframeFullWidth, setBelowIframeFullWidth] = useState<boolean>(
@@ -160,6 +182,10 @@ function IndexPopup() {
         DISABLE_CACHE_KEY,
         SHOW_CDP_STATUS_KEY,
         BELOW_IFRAME_FULL_WIDTH_KEY,
+        ENABLE_SNAPSHOTS_KEY,
+        SHOW_WATERFALL_KEY,
+        FOCUS_OFFENDERS_KEY,
+        SHOW_ALERTS_KEY,
         LIMIT_METRIC_KEY,
         LIMIT_BYTES_KEY
       ],
@@ -176,6 +202,10 @@ function IndexPopup() {
         setBelowIframeFullWidth(
           parseBelowIframeFullWidth(result[BELOW_IFRAME_FULL_WIDTH_KEY])
         )
+        setSnapshotsEnabled(parseEnableSnapshots(result[ENABLE_SNAPSHOTS_KEY]))
+        setWaterfallEnabled(parseShowWaterfall(result[SHOW_WATERFALL_KEY]))
+        setFocusOffendersEnabled(parseFocusOffenders(result[FOCUS_OFFENDERS_KEY]))
+        setAlertsEnabled(parseShowAlerts(result[SHOW_ALERTS_KEY]))
 
         const parsedLimitMetric = parseLimitMetric(result[LIMIT_METRIC_KEY])
         const parsedLimitBytes = parseLimitBytes(result[LIMIT_BYTES_KEY])
@@ -260,6 +290,30 @@ function IndexPopup() {
     const nextValue = !belowIframeFullWidth
     setBelowIframeFullWidth(nextValue)
     chrome.storage.sync.set({ [BELOW_IFRAME_FULL_WIDTH_KEY]: nextValue })
+  }
+
+  const onToggleSnapshotsEnabled = () => {
+    const nextValue = !snapshotsEnabled
+    setSnapshotsEnabled(nextValue)
+    chrome.storage.sync.set({ [ENABLE_SNAPSHOTS_KEY]: nextValue })
+  }
+
+  const onToggleWaterfallEnabled = () => {
+    const nextValue = !waterfallEnabled
+    setWaterfallEnabled(nextValue)
+    chrome.storage.sync.set({ [SHOW_WATERFALL_KEY]: nextValue })
+  }
+
+  const onToggleFocusOffendersEnabled = () => {
+    const nextValue = !focusOffendersEnabled
+    setFocusOffendersEnabled(nextValue)
+    chrome.storage.sync.set({ [FOCUS_OFFENDERS_KEY]: nextValue })
+  }
+
+  const onToggleAlertsEnabled = () => {
+    const nextValue = !alertsEnabled
+    setAlertsEnabled(nextValue)
+    chrome.storage.sync.set({ [SHOW_ALERTS_KEY]: nextValue })
   }
 
   const openSetupGuide = () => {
@@ -420,6 +474,76 @@ function IndexPopup() {
     cursor: "pointer",
     textAlign: "left" as const
   }
+  const sectionCardStyle = {
+    borderRadius: 14,
+    padding: 12,
+    background: theme.surface,
+    boxShadow: `inset 4px 4px 10px ${theme.shadowDark}, inset -4px -4px 10px ${theme.shadowLight}`
+  }
+  const sectionTitleStyle = {
+    margin: "0 0 8px",
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: 0.2,
+    color: theme.textMuted
+  }
+
+  const renderToggleCard = (
+    value: boolean,
+    onToggle: () => void,
+    title: string,
+    description: string
+  ) => (
+    <button
+      aria-pressed={value}
+      onClick={onToggle}
+      style={{
+        display: "flex",
+        width: "100%",
+        marginTop: 10,
+        border: `1px solid ${value ? theme.accent : "transparent"}`,
+        borderRadius: 12,
+        padding: "10px 12px",
+        background: theme.surface,
+        color: theme.text,
+        cursor: "pointer",
+        textAlign: "left",
+        boxShadow: value
+          ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
+          : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
+      }}
+      type="button">
+      <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{title}</span>
+        <span style={{ fontSize: 12, color: theme.textMuted }}>{description}</span>
+      </span>
+      <span
+        style={{
+          marginLeft: "auto",
+          width: 44,
+          height: 24,
+          borderRadius: 999,
+          background: value ? theme.accent : theme.background,
+          boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
+          position: "relative",
+          flexShrink: 0
+        }}>
+        <span
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            background: theme.surface,
+            boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
+            position: "absolute",
+            top: 3,
+            left: value ? 23 : 3,
+            transition: "left 120ms ease-out"
+          }}
+        />
+      </span>
+    </button>
+  )
 
   const renderOptionCards = <T extends string>(
     options: Array<{
@@ -488,7 +612,7 @@ function IndexPopup() {
   return (
     <main
       style={{
-        width: 360,
+        width: 380,
         padding: 16,
         fontFamily: "Segoe UI, Tahoma, sans-serif",
         color: theme.text,
@@ -502,374 +626,214 @@ function IndexPopup() {
           boxShadow: `8px 8px 18px ${theme.shadowDark}, -8px -8px 18px ${theme.shadowLight}`
         }}>
         <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Ad Auditor</h1>
-        <p style={{ margin: "8px 0 4px", fontSize: 12, color: theme.textMuted }}>
-          Browser theme: {isDarkTheme ? "Dark" : "Light"} (auto)
+        <p style={{ margin: "8px 0 12px", fontSize: 12, color: theme.textMuted }}>
+          Your assistant for auditing requests and creative resources. 🔎
         </p>
 
-        <p style={{ margin: "10px 0 8px", fontSize: 12, color: theme.textMuted }}>
-          Display mode
-        </p>
-        {renderOptionCards(
-          DISPLAY_OPTIONS,
-          mode,
-          onSelectDisplayMode,
-          "Display mode"
-        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <section style={sectionCardStyle}>
+            <p style={sectionTitleStyle}>Placement & Layout</p>
+            {renderOptionCards(
+              DISPLAY_OPTIONS,
+              mode,
+              onSelectDisplayMode,
+              "Display mode"
+            )}
+            {renderToggleCard(
+              belowIframeFullWidth,
+              onToggleBelowIframeFullWidth,
+              "Below iframe bar: full page width",
+              "If enabled, status bar uses `width: 100%` instead of iframe width."
+            )}
+            {renderToggleCard(
+              standaloneAmsPreviewBadgeEnabled,
+              onToggleStandaloneAmsPreviewBadge,
+              "Show stats on standalone AMS preview tab",
+              "URL: `ams.creativecdn.com/ad/creatives?preview=true...`"
+            )}
+          </section>
 
-        <button
-          aria-pressed={belowIframeFullWidth}
-          onClick={onToggleBelowIframeFullWidth}
-          style={{
-            display: "flex",
-            width: "100%",
-            marginTop: 12,
-            border: `1px solid ${belowIframeFullWidth ? theme.accent : "transparent"}`,
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: theme.surface,
-            color: theme.text,
-            cursor: "pointer",
-            textAlign: "left",
-            boxShadow: belowIframeFullWidth
-              ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
-              : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-          }}
-          type="button">
-          <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>
-              Below iframe bar: full page width
-            </span>
-            <span style={{ fontSize: 12, color: theme.textMuted }}>
-              If enabled, status bar uses `width: 100%` instead of iframe width.
-            </span>
-          </span>
-          <span
-            style={{
-              marginLeft: "auto",
-              width: 44,
-              height: 24,
-              borderRadius: 999,
-              background: belowIframeFullWidth ? theme.accent : theme.background,
-              boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
-              position: "relative",
-              flexShrink: 0
-            }}>
-            <span
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: theme.surface,
-                boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
-                position: "absolute",
-                top: 3,
-                left: belowIframeFullWidth ? 23 : 3,
-                transition: "left 120ms ease-out"
-              }}
-            />
-          </span>
-        </button>
+          <section style={sectionCardStyle}>
+            <p style={sectionTitleStyle}>Measurement & Diagnostics</p>
+            {renderOptionCards(
+              MEASUREMENT_OPTIONS,
+              measurementMethod,
+              onSelectMeasurementMethod,
+              "Measurement engine"
+            )}
+            {renderToggleCard(
+              disableCache,
+              onToggleDisableCache,
+              "Disable cache on preview domains",
+              "Applies to `creatives-preview.rtbhouse.com` and `ams.creativecdn.com`."
+            )}
+            {renderToggleCard(
+              showCdpStatus,
+              onToggleShowCdpStatus,
+              "Show CDP status",
+              "Adds a live CDP attached/fallback/error status panel."
+            )}
+            {renderToggleCard(
+              snapshotsEnabled,
+              onToggleSnapshotsEnabled,
+              "Enable snapshots & compare",
+              "Adds Save/Compare controls in request details."
+            )}
+            {renderToggleCard(
+              waterfallEnabled,
+              onToggleWaterfallEnabled,
+              "Show waterfall lite",
+              "Shows top request bars by transferred size."
+            )}
+            {renderToggleCard(
+              focusOffendersEnabled,
+              onToggleFocusOffendersEnabled,
+              "Focus offenders first",
+              "Highlights heavy or pending requests in the list."
+            )}
+            {renderToggleCard(
+              alertsEnabled,
+              onToggleAlertsEnabled,
+              "Show alerts",
+              "Adds actionable audit warnings below the status bar."
+            )}
 
-        <p style={{ margin: "14px 0 8px", fontSize: 12, color: theme.textMuted }}>
-          Measurement engine
-        </p>
-        {renderOptionCards(
-          MEASUREMENT_OPTIONS,
-          measurementMethod,
-          onSelectMeasurementMethod,
-          "Measurement engine"
-        )}
-
-        <button
-          aria-pressed={showCdpStatus}
-          onClick={onToggleShowCdpStatus}
-          style={{
-            display: "flex",
-            width: "100%",
-            marginTop: 12,
-            border: `1px solid ${showCdpStatus ? theme.accent : "transparent"}`,
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: theme.surface,
-            color: theme.text,
-            cursor: "pointer",
-            textAlign: "left",
-            boxShadow: showCdpStatus
-              ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
-              : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-          }}
-          type="button">
-          <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Show CDP status</span>
-            <span style={{ fontSize: 12, color: theme.textMuted }}>
-              Adds a live CDP attached/fallback/error status panel.
-            </span>
-          </span>
-          <span
-            style={{
-              marginLeft: "auto",
-              width: 44,
-              height: 24,
-              borderRadius: 999,
-              background: showCdpStatus ? theme.accent : theme.background,
-              boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
-              position: "relative",
-              flexShrink: 0
-            }}>
-            <span
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: theme.surface,
-                boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
-                position: "absolute",
-                top: 3,
-                left: showCdpStatus ? 23 : 3,
-                transition: "left 120ms ease-out"
-              }}
-            />
-          </span>
-        </button>
-
-        {showCdpStatus ? (
-          <div
-            style={{
-              marginTop: 10,
-              borderRadius: 12,
-              padding: "10px 12px",
-              border: `1px solid ${theme.accent}`,
-              background: theme.surface,
-              boxShadow: `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
-            }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
-              CDP status:{" "}
-              <span style={{ color: cdpStatusUi.color }}>{cdpStatusUi.label}</span>
-            </p>
-            {cdpStatusReason ? (
-              <p style={{ margin: "6px 0 0", fontSize: 12, color: theme.textMuted }}>
-                {cdpStatusReason}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        <p style={{ margin: "14px 0 8px", fontSize: 12, color: theme.textMuted }}>
-          Limit coloring
-        </p>
-        {renderOptionCards(
-          LIMIT_METRIC_OPTIONS,
-          limitMetric,
-          onSelectLimitMetric,
-          "Limit metric"
-        )}
-
-        <p style={{ margin: "14px 0 8px", fontSize: 12, color: theme.textMuted }}>
-          Limit presets
-        </p>
-        <div style={{ display: "flex", gap: 8 }}>
-          {LIMIT_PRESETS.map((preset) => {
-            const selected = activeLimitPreset === preset.key
-
-            return (
-              <button
-                key={preset.key}
-                onClick={() => onSelectLimitPreset(preset.bytes)}
+            {showCdpStatus ? (
+              <div
                 style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 2,
-                  border: selected
-                    ? `1px solid ${theme.accent}`
-                    : "1px solid transparent",
-                  borderRadius: 10,
-                  padding: "8px 6px",
+                  marginTop: 10,
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  border: `1px solid ${theme.accent}`,
                   background: theme.surface,
-                  color: theme.text,
-                  cursor: "pointer",
-                  fontSize: 11,
-                  fontWeight: selected ? 700 : 600,
-                  boxShadow: selected
-                    ? `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
-                    : `4px 4px 8px ${theme.shadowDark}, -4px -4px 8px ${theme.shadowLight}`
+                  boxShadow: `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
+                }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
+                  CDP status:{" "}
+                  <span style={{ color: cdpStatusUi.color }}>{cdpStatusUi.label}</span>
+                </p>
+                {cdpStatusReason ? (
+                  <p
+                    style={{ margin: "6px 0 0", fontSize: 12, color: theme.textMuted }}>
+                    {cdpStatusReason}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
+          <section style={sectionCardStyle}>
+            <p style={sectionTitleStyle}>Thresholds</p>
+            {renderOptionCards(
+              LIMIT_METRIC_OPTIONS,
+              limitMetric,
+              onSelectLimitMetric,
+              "Limit metric"
+            )}
+
+            <p style={{ margin: "12px 0 8px", fontSize: 12, color: theme.textMuted }}>
+              Limit presets
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              {LIMIT_PRESETS.map((preset) => {
+                const selected = activeLimitPreset === preset.key
+
+                return (
+                  <button
+                    key={preset.key}
+                    onClick={() => onSelectLimitPreset(preset.bytes)}
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 2,
+                      border: selected
+                        ? `1px solid ${theme.accent}`
+                        : "1px solid transparent",
+                      borderRadius: 10,
+                      padding: "8px 6px",
+                      background: theme.surface,
+                      color: theme.text,
+                      cursor: "pointer",
+                      fontSize: 11,
+                      fontWeight: selected ? 700 : 600,
+                      boxShadow: selected
+                        ? `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
+                        : `4px 4px 8px ${theme.shadowDark}, -4px -4px 8px ${theme.shadowLight}`
+                    }}
+                    type="button">
+                    <span>{preset.label}</span>
+                    <span
+                      style={{ fontSize: 10, fontWeight: 500, color: theme.textMuted }}>
+                      {preset.valueLabel}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginTop: 10,
+                borderRadius: 12,
+                padding: "10px 12px",
+                background: theme.surface,
+                border: "1px solid transparent",
+                boxShadow: `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
+              }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Custom limit (MB)</span>
+              <input
+                inputMode="decimal"
+                onBlur={persistLimitMb}
+                onChange={(event) => setLimitMbInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    persistLimitMb()
+                    event.currentTarget.blur()
+                  }
                 }}
-                type="button">
-                <span>{preset.label}</span>
-                <span style={{ fontSize: 10, fontWeight: 500, color: theme.textMuted }}>
-                  {preset.valueLabel}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+                style={{
+                  marginLeft: "auto",
+                  width: 90,
+                  borderRadius: 8,
+                  border: `1px solid ${theme.accent}`,
+                  background: theme.background,
+                  color: theme.text,
+                  padding: "6px 8px",
+                  fontSize: 12
+                }}
+                type="text"
+                value={limitMbInput}
+              />
+            </div>
+          </section>
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginTop: 10,
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: theme.surface,
-            border: "1px solid transparent",
-            boxShadow: `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-          }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Limit threshold (MB)</span>
-          <input
-            inputMode="decimal"
-            onBlur={persistLimitMb}
-            onChange={(event) => setLimitMbInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                persistLimitMb()
-                event.currentTarget.blur()
-              }
-            }}
-            style={{
-              marginLeft: "auto",
-              width: 90,
-              borderRadius: 8,
-              border: `1px solid ${theme.accent}`,
-              background: theme.background,
-              color: theme.text,
-              padding: "6px 8px",
-              fontSize: 12
-            }}
-            type="text"
-            value={limitMbInput}
-          />
-        </div>
-
-        <button
-          aria-pressed={disableCache}
-          onClick={onToggleDisableCache}
-          style={{
-            display: "flex",
-            width: "100%",
-            marginTop: 12,
-            border: `1px solid ${disableCache ? theme.accent : "transparent"}`,
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: theme.surface,
-            color: theme.text,
-            cursor: "pointer",
-            textAlign: "left",
-            boxShadow: disableCache
-              ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
-              : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-          }}
-          type="button">
-          <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>
-              Disable cache on preview domains
-            </span>
-            <span style={{ fontSize: 12, color: theme.textMuted }}>
-              Applies to `creatives-preview.rtbhouse.com` and `ams.creativecdn.com`.
-            </span>
-          </span>
-          <span
-            style={{
-              marginLeft: "auto",
-              width: 44,
-              height: 24,
-              borderRadius: 999,
-              background: disableCache ? theme.accent : theme.background,
-              boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
-              position: "relative",
-              flexShrink: 0
-            }}>
-            <span
+          <section style={sectionCardStyle}>
+            <p style={sectionTitleStyle}>Help</p>
+            <button
+              onClick={openSetupGuide}
               style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: theme.surface,
-                boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
-                position: "absolute",
-                top: 3,
-                left: disableCache ? 23 : 3,
-                transition: "left 120ms ease-out"
+                width: "100%",
+                border: `1px solid ${theme.accent}`,
+                borderRadius: 12,
+                padding: "10px 12px",
+                background: theme.background,
+                color: theme.text,
+                cursor: "pointer",
+                textAlign: "center",
+                fontSize: 13,
+                fontWeight: 600,
+                boxShadow: `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
               }}
-            />
-          </span>
-        </button>
-
-        <button
-          aria-pressed={standaloneAmsPreviewBadgeEnabled}
-          onClick={onToggleStandaloneAmsPreviewBadge}
-          style={{
-            display: "flex",
-            width: "100%",
-            marginTop: 12,
-            border: `1px solid ${standaloneAmsPreviewBadgeEnabled ? theme.accent : "transparent"}`,
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: theme.surface,
-            color: theme.text,
-            cursor: "pointer",
-            textAlign: "left",
-            boxShadow: standaloneAmsPreviewBadgeEnabled
-              ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
-              : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-          }}
-          type="button">
-          <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>
-              Show stats on standalone AMS preview tab
-            </span>
-            <span style={{ fontSize: 12, color: theme.textMuted }}>
-              URL: `ams.creativecdn.com/ad/creatives?preview=true...`
-            </span>
-          </span>
-          <span
-            style={{
-              marginLeft: "auto",
-              width: 44,
-              height: 24,
-              borderRadius: 999,
-              background: standaloneAmsPreviewBadgeEnabled ? theme.accent : theme.background,
-              boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
-              position: "relative",
-              flexShrink: 0
-            }}>
-            <span
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: theme.surface,
-                boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
-                position: "absolute",
-                top: 3,
-                left: standaloneAmsPreviewBadgeEnabled ? 23 : 3,
-                transition: "left 120ms ease-out"
-              }}
-            />
-          </span>
-        </button>
-
-        <button
-          onClick={openSetupGuide}
-          style={{
-            width: "100%",
-            marginTop: 12,
-            border: `1px solid ${theme.accent}`,
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: theme.background,
-            color: theme.text,
-            cursor: "pointer",
-            textAlign: "center",
-            fontSize: 13,
-            fontWeight: 600,
-            boxShadow: `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-          }}
-          type="button">
-          Open setup guide
-        </button>
+              type="button">
+              Open setup guide
+            </button>
+          </section>
+        </div>
       </section>
     </main>
   )

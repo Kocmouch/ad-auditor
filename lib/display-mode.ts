@@ -3,7 +3,7 @@ export type MeasurementMethod = "legacy_performance" | "enhanced_cdp"
 export type LimitMetric = "resources" | "transferred"
 
 export const SETTINGS_VERSION_KEY = "adAuditorSettingsVersion"
-export const CURRENT_SETTINGS_VERSION = 2
+export const CURRENT_SETTINGS_VERSION = 4
 export const DISPLAY_MODE_KEY = "adAuditorDisplayMode"
 export const STANDALONE_AMS_PREVIEW_BADGE_KEY =
   "adAuditorStandaloneAmsPreviewBadgeEnabled"
@@ -13,6 +13,10 @@ export const LIMIT_BYTES_KEY = "adAuditorLimitBytes"
 export const DISABLE_CACHE_KEY = "adAuditorDisableCache"
 export const SHOW_CDP_STATUS_KEY = "adAuditorShowCdpStatus"
 export const BELOW_IFRAME_FULL_WIDTH_KEY = "adAuditorBelowIframeFullWidth"
+export const ENABLE_SNAPSHOTS_KEY = "adAuditorEnableSnapshots"
+export const SHOW_WATERFALL_KEY = "adAuditorShowWaterfall"
+export const FOCUS_OFFENDERS_KEY = "adAuditorFocusOffenders"
+export const SHOW_ALERTS_KEY = "adAuditorShowAlerts"
 
 export const DEFAULT_DISPLAY_MODE: DisplayMode = "below_iframe"
 export const DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED = false
@@ -22,6 +26,10 @@ export const DEFAULT_LIMIT_BYTES = Math.round(2.5 * 1024 * 1024)
 export const DEFAULT_DISABLE_CACHE = true
 export const DEFAULT_SHOW_CDP_STATUS = false
 export const DEFAULT_BELOW_IFRAME_FULL_WIDTH = false
+export const DEFAULT_ENABLE_SNAPSHOTS = false
+export const DEFAULT_SHOW_WATERFALL = false
+export const DEFAULT_FOCUS_OFFENDERS = false
+export const DEFAULT_SHOW_ALERTS = false
 
 export const parseDisplayMode = (value: unknown): DisplayMode => {
   if (
@@ -89,6 +97,38 @@ export const parseBelowIframeFullWidth = (value: unknown): boolean => {
   }
 
   return DEFAULT_BELOW_IFRAME_FULL_WIDTH
+}
+
+export const parseEnableSnapshots = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  return DEFAULT_ENABLE_SNAPSHOTS
+}
+
+export const parseShowWaterfall = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  return DEFAULT_SHOW_WATERFALL
+}
+
+export const parseFocusOffenders = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  return DEFAULT_FOCUS_OFFENDERS
+}
+
+export const parseShowAlerts = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  return DEFAULT_SHOW_ALERTS
 }
 
 export const parseSettingsVersion = (value: unknown): number => {

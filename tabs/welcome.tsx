@@ -1,4 +1,24 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react"
+import {
+  BELOW_IFRAME_FULL_WIDTH_KEY,
+  CURRENT_SETTINGS_VERSION,
+  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+  DEFAULT_DISABLE_CACHE,
+  DEFAULT_DISPLAY_MODE,
+  DEFAULT_ENABLE_SNAPSHOTS,
+  DEFAULT_FOCUS_OFFENDERS,
+  DEFAULT_MEASUREMENT_METHOD,
+  DEFAULT_SHOW_CDP_STATUS,
+  DEFAULT_SHOW_WATERFALL,
+  DISABLE_CACHE_KEY,
+  DISPLAY_MODE_KEY,
+  ENABLE_SNAPSHOTS_KEY,
+  FOCUS_OFFENDERS_KEY,
+  MEASUREMENT_METHOD_KEY,
+  SETTINGS_VERSION_KEY,
+  SHOW_CDP_STATUS_KEY,
+  SHOW_WATERFALL_KEY
+} from "~lib/display-mode"
 
 const SUPPORT_EMAIL = "jakub.kaminski@rtbhouse.com"
 const SUPPORT_SLACK = "RTB House Slack"
@@ -10,6 +30,8 @@ const headingStyle: CSSProperties = {
 
 function WelcomePage() {
   const [isDarkTheme, setIsDarkTheme] = useState(false)
+  const [defaultsApplied, setDefaultsApplied] = useState(false)
+  const [popupOpened, setPopupOpened] = useState(false)
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
@@ -62,6 +84,38 @@ function WelcomePage() {
   }
   const supportLinkStyle: CSSProperties = {
     color: isDarkTheme ? "#ffffff" : "#0f7f5f"
+  }
+  const actionButtonStyle: CSSProperties = {
+    border: `1px solid ${theme.border}`,
+    borderRadius: 8,
+    padding: "8px 10px",
+    background: theme.card,
+    color: theme.text,
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 600
+  }
+
+  const applyRecommendedDefaults = () => {
+    chrome.storage.sync.set({
+      [DISPLAY_MODE_KEY]: DEFAULT_DISPLAY_MODE,
+      [MEASUREMENT_METHOD_KEY]: DEFAULT_MEASUREMENT_METHOD,
+      [DISABLE_CACHE_KEY]: DEFAULT_DISABLE_CACHE,
+      [SHOW_CDP_STATUS_KEY]: DEFAULT_SHOW_CDP_STATUS,
+      [BELOW_IFRAME_FULL_WIDTH_KEY]: DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+      [ENABLE_SNAPSHOTS_KEY]: DEFAULT_ENABLE_SNAPSHOTS,
+      [SHOW_WATERFALL_KEY]: DEFAULT_SHOW_WATERFALL,
+      [FOCUS_OFFENDERS_KEY]: DEFAULT_FOCUS_OFFENDERS,
+      [SETTINGS_VERSION_KEY]: CURRENT_SETTINGS_VERSION
+    })
+    setDefaultsApplied(true)
+  }
+
+  const openPopupPage = () => {
+    chrome.tabs.create({
+      url: chrome.runtime.getURL("popup.html")
+    })
+    setPopupOpened(true)
   }
 
   return (
@@ -122,6 +176,38 @@ function WelcomePage() {
             <code>https://ams.creativecdn.com/*</code>
           </li>
         </ul>
+      </section>
+
+      <section style={{ ...cardStyle, marginTop: 12 }}>
+        <h2 style={headingStyle}>Interactive Onboarding</h2>
+        <ul style={{ margin: 0, paddingLeft: 20 }}>
+          <li>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input checked readOnly type="checkbox" />
+              Welcome page opened
+            </label>
+          </li>
+          <li>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input checked={defaultsApplied} readOnly type="checkbox" />
+              Recommended defaults applied
+            </label>
+          </li>
+          <li>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input checked={popupOpened} readOnly type="checkbox" />
+              Popup opened in a tab
+            </label>
+          </li>
+        </ul>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button onClick={applyRecommendedDefaults} style={actionButtonStyle} type="button">
+            Apply recommended defaults
+          </button>
+          <button onClick={openPopupPage} style={actionButtonStyle} type="button">
+            Open popup page
+          </button>
+        </div>
       </section>
 
       <section style={{ ...cardStyle, marginTop: 12 }}>
