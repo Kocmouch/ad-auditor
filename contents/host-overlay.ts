@@ -1,9 +1,12 @@
 import type { PlasmoCSConfig } from "plasmo"
 
-import type { DisplayMode, LimitMetric } from "~lib/types/settings"
-import { STORAGE_KEYS } from "~lib/storage/keys"
-import { DEFAULTS } from "~lib/storage/defaults"
-import { parsers } from "~lib/storage/parsers"
+import type { FontMismatch } from "~lib/features/font-checker"
+import {
+  compareSnapshot as compareSnapshotUtil,
+  getSnapshotInfo,
+  saveSnapshot as saveSnapshotUtil,
+  type Totals
+} from "~lib/features/snapshot"
 import {
   buildEnglishAlerts,
   buildWaterfallLite,
@@ -16,15 +19,12 @@ import {
   type RequestSort,
   type RequestStatusFilter
 } from "~lib/request-list"
+import { DEFAULTS } from "~lib/storage/defaults"
+import { STORAGE_KEYS } from "~lib/storage/keys"
+import { parsers } from "~lib/storage/parsers"
+import type { DisplayMode, LimitMetric } from "~lib/types/settings"
 import { getUsageColor } from "~lib/usage-color"
 import { formatBytes, shortUrl } from "~lib/utils/formatters"
-import {
-  saveSnapshot as saveSnapshotUtil,
-  compareSnapshot as compareSnapshotUtil,
-  getSnapshotInfo,
-  type Totals
-} from "~lib/features/snapshot"
-import type { FontMismatch } from "~lib/features/font-checker"
 
 export const config: PlasmoCSConfig = {
   matches: [
@@ -150,16 +150,29 @@ const compareSnapshot = (state: BadgeState) => {
     transferred: state.transferred
   }
 
-  const result = compareSnapshotUtil(state.url, currentTotals, savedSnapshotsByUrl)
+  const result = compareSnapshotUtil(
+    state.url,
+    currentTotals,
+    savedSnapshotsByUrl
+  )
   state.requestSnapshotInfo.textContent = result
 }
 
-const checkFontsInIframe = (iframe: HTMLIFrameElement, callback: (mismatches: FontMismatch[], iframeUrl: string) => void) => {
+const checkFontsInIframe = (
+  iframe: HTMLIFrameElement,
+  callback: (mismatches: FontMismatch[], iframeUrl: string) => void
+) => {
   // Send request to iframe to check its fonts
   const messageHandler = (event: MessageEvent) => {
-    if (event.data?.type === "ad-auditor-check-fonts-response" && event.source === iframe.contentWindow) {
+    if (
+      event.data?.type === "ad-auditor-check-fonts-response" &&
+      event.source === iframe.contentWindow
+    ) {
       window.removeEventListener("message", messageHandler)
-      callback(event.data.fontMismatches || [], event.data.iframeUrl || iframe.src || "unknown")
+      callback(
+        event.data.fontMismatches || [],
+        event.data.iframeUrl || iframe.src || "unknown"
+      )
     }
   }
 
@@ -170,7 +183,10 @@ const checkFontsInIframe = (iframe: HTMLIFrameElement, callback: (mismatches: Fo
     window.removeEventListener("message", messageHandler)
   }, 5000)
 
-  iframe.contentWindow?.postMessage({ type: "ad-auditor-check-fonts-request" }, "*")
+  iframe.contentWindow?.postMessage(
+    { type: "ad-auditor-check-fonts-request" },
+    "*"
+  )
 }
 
 const updateAlerts = (state: BadgeState) => {
@@ -338,7 +354,8 @@ const openUrl = (url: string) => {
 }
 
 const applyUsageColor = (state: BadgeState) => {
-  const value = limitMetric === "resources" ? state.resources : state.transferred
+  const value =
+    limitMetric === "resources" ? state.resources : state.transferred
   const activeColor = getUsageColor(value, limitBytes)
 
   if (limitMetric === "resources") {
@@ -351,25 +368,78 @@ const applyUsageColor = (state: BadgeState) => {
   state.resourcesValue.style.color = "#ffffff"
 }
 
-const insertBadgeAfterIframe = (iframe: HTMLIFrameElement, badge: HTMLDivElement) => {
+const insertBadgeAfterIframe = (
+  iframe: HTMLIFrameElement,
+  badgeWrapper: HTMLDivElement
+) => {
   const parent = iframe.parentElement
   if (!parent) {
     return
   }
 
-  if (badge.parentElement !== parent || badge.previousSibling !== iframe) {
-    parent.insertBefore(badge, iframe.nextSibling)
+  // Insert badge wrapper inside the same container as iframe, right after the iframe
+  if (badgeWrapper.parentElement !== parent) {
+    parent.appendChild(badgeWrapper)
+  } else if (badgeWrapper.previousSibling !== iframe) {
+    // Ensure it's positioned right after iframe
+    parent.insertBefore(badgeWrapper, iframe.nextSibling)
+  }
+
+  // Override parent container's fixed height to allow it to expand
+  // But preserve width and other styling
+  if (parent.style.height && parent.style.height !== "auto") {
+    parent.style.height = "auto"
+  }
+
+  // Ensure parent maintains its width
+  if (!parent.style.width || parent.style.width === "auto") {
+    const computedWidth = iframe.getBoundingClientRect().width
+    if (computedWidth > 0) {
+      parent.style.width = `${computedWidth}px`
+    }
   }
 }
 
-const syncBadgeWidth = (iframe: HTMLIFrameElement, badge: HTMLDivElement) => {
-  if (belowIframeFullWidth) {
-    badge.style.width = "100%"
-    return
-  }
+const syncBadgeWidth = (
+  iframe: HTMLIFrameElement,
+  badgeWrapper: HTMLDivElement
+) => {
+  // Always use 100% width to match parent container
+  badgeWrapper.style.width = "100%"
+
+  // Get the actual badge element (first child of wrapper)
+  const badge = badgeWrapper.firstElementChild as HTMLDivElement
+  if (!badge) return
 
   const frameWidth = Math.round(iframe.getBoundingClientRect().width)
-  badge.style.width = `${Math.max(frameWidth, 140)}px`
+
+  // Get the open button (should be third child in badge)
+  const openButton = badge.children[2] as HTMLButtonElement
+
+  // If width is less than 250px, stack elements vertically
+  if (frameWidth < 250) {
+    badge.style.flexDirection = "column"
+    badge.style.alignItems = "center"
+    badge.style.justifyContent = "center"
+    badge.style.gap = "4px"
+    badge.style.textAlign = "center"
+
+    // Remove margin-left auto from open button in vertical layout
+    if (openButton) {
+      openButton.style.marginLeft = "0"
+    }
+  } else {
+    badge.style.flexDirection = "row"
+    badge.style.alignItems = "center"
+    badge.style.justifyContent = "space-between"
+    badge.style.gap = "0"
+    badge.style.textAlign = "left"
+
+    // Restore margin-left auto for open button in horizontal layout
+    if (openButton) {
+      openButton.style.marginLeft = "auto"
+    }
+  }
 }
 
 const removeState = (iframe: HTMLIFrameElement) => {
@@ -380,7 +450,6 @@ const removeState = (iframe: HTMLIFrameElement) => {
 
   state.resizeObserver.disconnect()
   state.badge.remove()
-  state.alertsContainer.remove()
   states.delete(iframe)
 }
 
@@ -392,12 +461,20 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   const current = states.get(iframe)
   if (current) {
     insertBadgeAfterIframe(iframe, current.badge)
-    if (current.alertsContainer.previousSibling !== current.badge) {
-      current.badge.insertAdjacentElement("afterend", current.alertsContainer)
-    }
     syncBadgeWidth(iframe, current.badge)
     return current
   }
+
+  const badgeWrapper = document.createElement("div")
+  badgeWrapper.setAttribute(
+    "style",
+    [
+      "display: flex",
+      "flex-direction: column",
+      "margin-top: 8px",
+      "width: 100%"
+    ].join(";")
+  )
 
   const badge = document.createElement("div")
   badge.setAttribute(
@@ -409,7 +486,6 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "align-items: center",
       "padding: 4px 8px",
       "box-sizing: border-box",
-      "margin-top: 2px",
       "background: rgba(0, 0, 0, 0.8)",
       "color: #7dff6a",
       "font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
@@ -605,9 +681,20 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "font-size: 11px",
       "line-height: 0",
       "cursor: pointer",
-      "margin-left: 4px",
       "display: flex",
       "align-items: center",
+      "justify-content: center"
+    ].join(";")
+  )
+
+  const middleButtonsGroup = document.createElement("div")
+  middleButtonsGroup.setAttribute(
+    "style",
+    [
+      "display: flex",
+      "gap: 4px",
+      "align-items: center",
+      "flex: 1",
       "justify-content: center"
     ].join(";")
   )
@@ -618,7 +705,6 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     [
       "display:none",
       "padding:4px 8px",
-      "margin-top:2px",
       "background:rgba(0,0,0,0.88)",
       "border-top:1px solid rgba(125,255,106,0.35)",
       "font-size:10px",
@@ -633,7 +719,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
 
   const state: BadgeState = {
     alertsContainer,
-    badge,
+    badge: badgeWrapper,
     hostFilterInput,
     isRequestListHoverActive: false,
     requestCount: 0,
@@ -665,9 +751,13 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   requestStatusSelect.addEventListener("change", () => updateRequestList(state))
   requestSortSelect.addEventListener("change", () => updateRequestList(state))
   hostFilterInput.addEventListener("input", () => updateRequestList(state))
-  requestShowAllCheckbox.addEventListener("change", () => updateRequestList(state))
+  requestShowAllCheckbox.addEventListener("change", () =>
+    updateRequestList(state)
+  )
   requestSnapshotSaveButton.addEventListener("click", () => saveSnapshot(state))
-  requestSnapshotCompareButton.addEventListener("click", () => compareSnapshot(state))
+  requestSnapshotCompareButton.addEventListener("click", () =>
+    compareSnapshot(state)
+  )
 
   openButton.addEventListener("click", () => openUrl(state.url))
   checkFontsButton.addEventListener("click", () => {
@@ -675,31 +765,42 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       state.fontMismatches = fontMismatches
 
       // Send message to creatives-host.ts to display results
-      const iframes = Array.from(document.querySelectorAll<HTMLIFrameElement>("iframe"))
+      const iframes = Array.from(
+        document.querySelectorAll<HTMLIFrameElement>("iframe")
+      )
       const iframeIndex = iframes.indexOf(iframe)
 
-      window.postMessage({
-        type: "ad-auditor-font-check-results",
-        fontMismatches: fontMismatches,
-        iframeUrl: iframeUrl,
-        iframeIndex: iframeIndex
-      }, "*")
+      window.postMessage(
+        {
+          type: "ad-auditor-font-check-results",
+          fontMismatches: fontMismatches,
+          iframeUrl: iframeUrl,
+          iframeIndex: iframeIndex
+        },
+        "*"
+      )
     })
   })
-  badge.addEventListener("mouseenter", () => {
+  badgeWrapper.addEventListener("mouseenter", () => {
     state.isRequestListHoverActive = true
     updateRequestList(state)
   })
-  badge.addEventListener("mouseleave", () => {
+  badgeWrapper.addEventListener("mouseleave", () => {
     state.isRequestListHoverActive = false
     state.requestListContainer.style.display = "none"
   })
 
-  badge.append(statsContainer, openButton, checkFontsButton, requestListContainer)
+  badge.append(
+    statsContainer,
+    middleButtonsGroup,
+    openButton,
+    requestListContainer
+  )
+  middleButtonsGroup.append(checkFontsButton)
+  badgeWrapper.append(badge, alertsContainer)
 
-  insertBadgeAfterIframe(iframe, badge)
-  badge.insertAdjacentElement("afterend", alertsContainer)
-  syncBadgeWidth(iframe, badge)
+  insertBadgeAfterIframe(iframe, badgeWrapper)
+  syncBadgeWidth(iframe, badgeWrapper)
   resizeObserver.observe(iframe)
 
   states.set(iframe, state)
@@ -749,9 +850,6 @@ const cleanupDetachedFrames = () => {
     }
 
     insertBadgeAfterIframe(iframe, state.badge)
-    if (state.alertsContainer.previousSibling !== state.badge) {
-      state.badge.insertAdjacentElement("afterend", state.alertsContainer)
-    }
     syncBadgeWidth(iframe, state.badge)
   })
 }
@@ -779,7 +877,11 @@ const handleStatsMessage = (event: MessageEvent) => {
     return
   }
 
-  if (!event.data || event.data.source !== SOURCE_ID || event.data.type !== "stats") {
+  if (
+    !event.data ||
+    event.data.source !== SOURCE_ID ||
+    event.data.type !== "stats"
+  ) {
     return
   }
 
@@ -857,7 +959,9 @@ const loadSettings = () => {
         parsers.displayMode(result[STORAGE_KEYS.DISPLAY_MODE]),
         parsers.limitMetric(result[STORAGE_KEYS.LIMIT_METRIC]),
         parsers.limitBytes(result[STORAGE_KEYS.LIMIT_BYTES]),
-        parsers.belowIframeFullWidth(result[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]),
+        parsers.belowIframeFullWidth(
+          result[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]
+        ),
         parsers.enableSnapshots(result[STORAGE_KEYS.ENABLE_SNAPSHOTS]),
         parsers.showWaterfall(result[STORAGE_KEYS.SHOW_WATERFALL]),
         parsers.focusOffenders(result[STORAGE_KEYS.FOCUS_OFFENDERS]),
@@ -885,15 +989,21 @@ const observeSettingsChanges = () => {
     let nextRequestListEnabled = requestListEnabled
 
     if (changes[STORAGE_KEYS.DISPLAY_MODE]) {
-      nextDisplayMode = parsers.displayMode(changes[STORAGE_KEYS.DISPLAY_MODE].newValue)
+      nextDisplayMode = parsers.displayMode(
+        changes[STORAGE_KEYS.DISPLAY_MODE].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.LIMIT_METRIC]) {
-      nextLimitMetric = parsers.limitMetric(changes[STORAGE_KEYS.LIMIT_METRIC].newValue)
+      nextLimitMetric = parsers.limitMetric(
+        changes[STORAGE_KEYS.LIMIT_METRIC].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.LIMIT_BYTES]) {
-      nextLimitBytes = parsers.limitBytes(changes[STORAGE_KEYS.LIMIT_BYTES].newValue)
+      nextLimitBytes = parsers.limitBytes(
+        changes[STORAGE_KEYS.LIMIT_BYTES].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]) {
@@ -909,7 +1019,9 @@ const observeSettingsChanges = () => {
     }
 
     if (changes[STORAGE_KEYS.SHOW_WATERFALL]) {
-      nextWaterfallEnabled = parsers.showWaterfall(changes[STORAGE_KEYS.SHOW_WATERFALL].newValue)
+      nextWaterfallEnabled = parsers.showWaterfall(
+        changes[STORAGE_KEYS.SHOW_WATERFALL].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.FOCUS_OFFENDERS]) {
@@ -919,7 +1031,9 @@ const observeSettingsChanges = () => {
     }
 
     if (changes[STORAGE_KEYS.SHOW_ALERTS]) {
-      nextAlertsEnabled = parsers.showAlerts(changes[STORAGE_KEYS.SHOW_ALERTS].newValue)
+      nextAlertsEnabled = parsers.showAlerts(
+        changes[STORAGE_KEYS.SHOW_ALERTS].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.SHOW_REQUEST_LIST]) {

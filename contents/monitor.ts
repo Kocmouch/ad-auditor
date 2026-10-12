@@ -20,6 +20,7 @@ import { getUsageColor } from "~lib/usage-color"
 import { formatBytes, shortUrl } from "~lib/utils/formatters"
 import {
   checkFontsInDocument,
+  clearFontHighlights,
   type FontMismatch
 } from "~lib/features/font-checker"
 import {
@@ -1330,6 +1331,29 @@ const init = () => {
 
     if (isIframeContext) {
       bindHoverMode()
+
+      // Listen for messages from host-overlay
+      window.addEventListener("message", (event) => {
+        // Clear highlights
+        if (event.data?.type === "ad-auditor-clear-font-highlights") {
+          clearFontHighlights()
+        }
+
+        // Check fonts request from host-overlay (below_iframe mode)
+        if (event.data?.type === "ad-auditor-check-fonts-request") {
+          const mismatches = checkFontsInDocument()
+
+          // Send response back to host-overlay
+          window.parent.postMessage(
+            {
+              type: "ad-auditor-check-fonts-response",
+              fontMismatches: mismatches,
+              iframeUrl: window.location.href
+            },
+            "*"
+          )
+        }
+      })
     }
 
     startLegacyUpdates()

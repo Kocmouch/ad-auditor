@@ -1,5 +1,7 @@
 import type { PlasmoCSConfig } from "plasmo"
 
+import { clearFontHighlights } from "~lib/features/font-checker"
+
 export const config: PlasmoCSConfig = {
   matches: [
     "https://creatives-preview.rtbhouse.com/*",
@@ -73,6 +75,11 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
     container.style.display = "none"
     container.textContent = ""
     removeIframeHighlight()
+
+    // Clear highlights in iframe
+    if (iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: "ad-auditor-clear-font-highlights" }, "*")
+    }
     return
   }
 
@@ -188,6 +195,11 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
   closeButton.addEventListener("click", () => {
     container.style.display = "none"
     removeIframeHighlight()
+
+    // Clear highlights in iframe
+    if (currentHighlightedIframe && currentHighlightedIframe.contentWindow) {
+      currentHighlightedIframe.contentWindow.postMessage({ type: "ad-auditor-clear-font-highlights" }, "*")
+    }
   })
 
   minimizeButton.addEventListener("mouseenter", () => {
