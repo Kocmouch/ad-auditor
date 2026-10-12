@@ -10,6 +10,10 @@ type Theme = {
   accent: string
 }
 
+// Store panel position globally so it persists across re-renders
+let savedPanelX = 0
+let savedPanelY = 0
+
 export const createFontCheckResultsPanel = (
   fontMismatches: FontMismatch[],
   theme: Theme
@@ -31,6 +35,12 @@ export const createFontCheckResultsPanel = (
     "backdrop-filter:blur(10px)",
     "border:1px solid rgba(125, 255, 106, 0.1)"
   ].join(";")
+
+  // Apply saved position immediately
+  if (savedPanelX !== 0 || savedPanelY !== 0) {
+    container.style.transform = `translate(${savedPanelX}px, ${savedPanelY}px)`
+    console.log('[Ad Auditor] Restoring panel position:', savedPanelX, savedPanelY)
+  }
 
   if (fontMismatches.length === 0) {
     container.style.display = "none"
@@ -168,8 +178,8 @@ const addHoverEffect = (button: HTMLButtonElement) => {
 
 const makeDraggable = (container: HTMLDivElement, header: HTMLDivElement) => {
   let isDragging = false
-  let currentX = 0
-  let currentY = 0
+  let currentX = savedPanelX
+  let currentY = savedPanelY
   let initialX = 0
   let initialY = 0
 
@@ -177,6 +187,7 @@ const makeDraggable = (container: HTMLDivElement, header: HTMLDivElement) => {
     isDragging = true
     initialX = e.clientX - currentX
     initialY = e.clientY - currentY
+    console.log('[Ad Auditor] Start drag - currentX:', currentX, 'currentY:', currentY)
   })
 
   document.addEventListener("mousemove", (e) => {
@@ -185,6 +196,10 @@ const makeDraggable = (container: HTMLDivElement, header: HTMLDivElement) => {
       currentX = e.clientX - initialX
       currentY = e.clientY - initialY
       container.style.transform = `translate(${currentX}px, ${currentY}px)`
+
+      // Save position globally
+      savedPanelX = currentX
+      savedPanelY = currentY
     }
   })
 

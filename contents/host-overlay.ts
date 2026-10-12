@@ -437,13 +437,8 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   const requestCountValue = document.createElement("span")
   requestCountValue.textContent = " (0 req)"
 
-  statsContainer.append(
-    prefix,
-    transferredValue,
-    separator,
-    resourcesValue,
-    requestCountValue
-  )
+  // Below iframe mode (host-overlay): compact view like inside iframe
+  statsContainer.append(resourcesValue)
 
   const requestListContainer = document.createElement("div")
   requestListContainer.setAttribute(
@@ -575,7 +570,8 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
 
   const openButton = document.createElement("button")
   openButton.type = "button"
-  openButton.textContent = "Open"
+  openButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`
+  openButton.title = "Open in new tab"
   openButton.setAttribute(
     "style",
     [
@@ -583,17 +579,21 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "background: transparent",
       "color: #7dff6a",
       "border-radius: 4px",
-      "padding: 2px 8px",
+      "padding: 4px",
       "font-size: 11px",
-      "line-height: 1.2",
+      "line-height: 0",
       "cursor: pointer",
-      "margin-left: auto"
+      "margin-left: auto",
+      "display: flex",
+      "align-items: center",
+      "justify-content: center"
     ].join(";")
   )
 
   const checkFontsButton = document.createElement("button")
   checkFontsButton.type = "button"
-  checkFontsButton.textContent = "Check Fonts"
+  checkFontsButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>`
+  checkFontsButton.title = "Check fonts"
   checkFontsButton.setAttribute(
     "style",
     [
@@ -601,11 +601,14 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "background: transparent",
       "color: #7dff6a",
       "border-radius: 4px",
-      "padding: 2px 8px",
+      "padding: 4px",
       "font-size: 11px",
-      "line-height: 1.2",
+      "line-height: 0",
       "cursor: pointer",
-      "margin-left: 4px"
+      "margin-left: 4px",
+      "display: flex",
+      "align-items: center",
+      "justify-content: center"
     ].join(";")
   )
 

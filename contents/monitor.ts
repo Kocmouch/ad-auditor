@@ -602,13 +602,19 @@ const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => 
     const nextRequestsValue = document.createElement("span")
     nextRequestsValue.textContent = " (0 req)"
 
-    statsContainer.append(
-      prefix,
-      nextTransferredValue,
-      separator,
-      nextResourcesValue,
-      nextRequestsValue
-    )
+    // Inside iframe: compact view (only resources)
+    // Standalone/host page: full view
+    if (isIframeContext) {
+      statsContainer.append(nextResourcesValue)
+    } else {
+      statsContainer.append(
+        prefix,
+        nextTransferredValue,
+        separator,
+        nextResourcesValue,
+        nextRequestsValue
+      )
+    }
 
     const nextRequestListContainer = document.createElement("div")
     nextRequestListContainer.setAttribute(
@@ -740,7 +746,8 @@ const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => 
 
     const nextOpenButton = document.createElement("button")
     nextOpenButton.type = "button"
-    nextOpenButton.textContent = "Open"
+    nextOpenButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`
+    nextOpenButton.title = "Open in new tab"
     nextOpenButton.setAttribute(
       "style",
       [
@@ -748,20 +755,24 @@ const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => 
         "background: transparent",
         "color: #7dff6a",
         "border-radius: 4px",
-        "padding: 2px 8px",
+        "padding: 4px",
         "font-size: 11px",
-        "line-height: 1.2",
+        "line-height: 0",
         "cursor: pointer",
         "margin-left: auto",
         "position: relative",
-        "z-index: 1"
+        "z-index: 1",
+        "display: flex",
+        "align-items: center",
+        "justify-content: center"
       ].join(";")
     )
     nextOpenButton.addEventListener("click", openInNewTab)
 
     const nextCheckFontsButton = document.createElement("button")
     nextCheckFontsButton.type = "button"
-    nextCheckFontsButton.textContent = "Check Fonts"
+    nextCheckFontsButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>`
+    nextCheckFontsButton.title = "Check fonts"
     nextCheckFontsButton.setAttribute(
       "style",
       [
@@ -769,13 +780,16 @@ const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => 
         "background: transparent",
         "color: #7dff6a",
         "border-radius: 4px",
-        "padding: 2px 8px",
+        "padding: 4px",
         "font-size: 11px",
-        "line-height: 1.2",
+        "line-height: 0",
         "cursor: pointer",
         "margin-left: 4px",
         "position: relative",
-        "z-index: 1"
+        "z-index: 1",
+        "display: flex",
+        "align-items: center",
+        "justify-content: center"
       ].join(";")
     )
     nextCheckFontsButton.addEventListener("click", handleCheckFonts)
@@ -993,6 +1007,7 @@ const render = () => {
       return
     }
 
+    // Standalone AMS page: no "Open" button (already on the page), only "Check Fonts"
     ensureBadge(false, true)
     if (transferredValueSpan) {
       transferredValueSpan.textContent = transferredText
@@ -1016,7 +1031,8 @@ const render = () => {
     return
   }
 
-  ensureBadge(false, true)
+  // Inside iframe: show both "Open" and "Check Fonts" buttons
+  ensureBadge(true, true)
   if (transferredValueSpan) {
     transferredValueSpan.textContent = transferredText
   }

@@ -17,6 +17,10 @@ type FontMismatch = {
 let globalFontCheckResultsContainer: HTMLDivElement | null = null
 let currentHighlightedIframe: HTMLIFrameElement | null = null
 
+// Store panel position globally so it persists across re-renders
+let savedPanelX = 0
+let savedPanelY = 0
+
 const ensureGlobalFontCheckContainer = (): HTMLDivElement => {
   if (globalFontCheckResultsContainer && document.body.contains(globalFontCheckResultsContainer)) {
     return globalFontCheckResultsContainer
@@ -75,6 +79,11 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
   container.textContent = ""
   container.style.display = "block"
   highlightIframe(iframe)
+
+  // Apply saved position
+  if (savedPanelX !== 0 || savedPanelY !== 0) {
+    container.style.transform = `translate(${savedPanelX}px, ${savedPanelY}px)`
+  }
 
   const header = document.createElement("div")
   header.style.cssText = [
@@ -197,8 +206,8 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
 
   // Make draggable
   let isDragging = false
-  let currentX = 0
-  let currentY = 0
+  let currentX = savedPanelX
+  let currentY = savedPanelY
   let initialX = 0
   let initialY = 0
 
@@ -214,6 +223,10 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
       currentX = e.clientX - initialX
       currentY = e.clientY - initialY
       container.style.transform = `translate(${currentX}px, ${currentY}px)`
+
+      // Save position globally
+      savedPanelX = currentX
+      savedPanelY = currentY
     }
   })
 
