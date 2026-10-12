@@ -5,6 +5,7 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
 ## Supported Domains
 
 - `https://creatives-preview.rtbhouse.com/*`
+- `https://techtools.rtbhouse.biz/*`
 - `https://statics.creativecdn.com/*`
 - `https://ams.creativecdn.com/*`
 

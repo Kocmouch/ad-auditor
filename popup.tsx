@@ -1,46 +1,13 @@
 import { useEffect, useMemo, useState } from "react"
 
-import {
-  BELOW_IFRAME_FULL_WIDTH_KEY,
-  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
-  DEFAULT_ENABLE_SNAPSHOTS,
-  DEFAULT_FOCUS_OFFENDERS,
-  DEFAULT_SHOW_ALERTS,
-  DEFAULT_SHOW_CDP_STATUS,
-  DEFAULT_DISABLE_CACHE,
-  DEFAULT_LIMIT_BYTES,
-  DEFAULT_LIMIT_METRIC,
-  DEFAULT_MEASUREMENT_METHOD,
-  DEFAULT_SHOW_WATERFALL,
-  DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED,
-  DEFAULT_DISPLAY_MODE,
-  DISABLE_CACHE_KEY,
-  DISPLAY_MODE_KEY,
-  ENABLE_SNAPSHOTS_KEY,
-  FOCUS_OFFENDERS_KEY,
-  LIMIT_BYTES_KEY,
-  LIMIT_METRIC_KEY,
-  MEASUREMENT_METHOD_KEY,
-  SHOW_ALERTS_KEY,
-  SHOW_CDP_STATUS_KEY,
-  SHOW_WATERFALL_KEY,
-  STANDALONE_AMS_PREVIEW_BADGE_KEY,
-  type DisplayMode,
-  type LimitMetric,
-  type MeasurementMethod,
-  parseDisplayMode,
-  parseDisableCache,
-  parseLimitBytes,
-  parseLimitMetric,
-  parseMeasurementMethod,
-  parseBelowIframeFullWidth,
-  parseEnableSnapshots,
-  parseFocusOffenders,
-  parseShowAlerts,
-  parseShowCdpStatus,
-  parseShowWaterfall,
-  parseStandaloneAmsPreviewBadgeEnabled
-} from "~lib/display-mode"
+import type { DisplayMode, LimitMetric, MeasurementMethod } from "~lib/types/settings"
+import { STORAGE_KEYS } from "~lib/storage/keys"
+import { DEFAULTS } from "~lib/storage/defaults"
+import { parsers } from "~lib/storage/parsers"
+import { ToggleCard } from "~components/ToggleCard"
+import { OptionCards } from "~components/OptionCards"
+import { CdpStatusDisplay } from "~components/CdpStatusDisplay"
+import { getTheme } from "~lib/ui/theme"
 
 const DISPLAY_OPTIONS: Array<{
   value: DisplayMode
@@ -141,74 +108,79 @@ const LIMIT_PRESETS: LimitPreset[] = [
 ]
 
 function IndexPopup() {
-  const [mode, setMode] = useState<DisplayMode>(DEFAULT_DISPLAY_MODE)
+  const [mode, setMode] = useState<DisplayMode>(DEFAULTS.DISPLAY_MODE)
   const [isDarkTheme, setIsDarkTheme] = useState(false)
   const [measurementMethod, setMeasurementMethod] = useState<MeasurementMethod>(
-    DEFAULT_MEASUREMENT_METHOD
+    DEFAULTS.MEASUREMENT_METHOD
   )
   const [standaloneAmsPreviewBadgeEnabled, setStandaloneAmsPreviewBadgeEnabled] =
-    useState<boolean>(DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED)
-  const [disableCache, setDisableCache] = useState<boolean>(DEFAULT_DISABLE_CACHE)
+    useState<boolean>(DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED)
+  const [disableCache, setDisableCache] = useState<boolean>(DEFAULTS.DISABLE_CACHE)
   const [showCdpStatus, setShowCdpStatus] = useState<boolean>(
-    DEFAULT_SHOW_CDP_STATUS
+    DEFAULTS.SHOW_CDP_STATUS
   )
   const [snapshotsEnabled, setSnapshotsEnabled] = useState<boolean>(
-    DEFAULT_ENABLE_SNAPSHOTS
+    DEFAULTS.ENABLE_SNAPSHOTS
   )
   const [waterfallEnabled, setWaterfallEnabled] = useState<boolean>(
-    DEFAULT_SHOW_WATERFALL
+    DEFAULTS.SHOW_WATERFALL
   )
   const [focusOffendersEnabled, setFocusOffendersEnabled] = useState<boolean>(
-    DEFAULT_FOCUS_OFFENDERS
+    DEFAULTS.FOCUS_OFFENDERS
   )
-  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(DEFAULT_SHOW_ALERTS)
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(DEFAULTS.SHOW_ALERTS)
+  const [requestListEnabled, setRequestListEnabled] = useState<boolean>(
+    DEFAULTS.SHOW_REQUEST_LIST
+  )
   const [cdpStatus, setCdpStatus] = useState<CdpStatus>("idle")
   const [cdpStatusReason, setCdpStatusReason] = useState("")
   const [belowIframeFullWidth, setBelowIframeFullWidth] = useState<boolean>(
-    DEFAULT_BELOW_IFRAME_FULL_WIDTH
+    DEFAULTS.BELOW_IFRAME_FULL_WIDTH
   )
-  const [limitMetric, setLimitMetric] = useState<LimitMetric>(DEFAULT_LIMIT_METRIC)
-  const [limitBytes, setLimitBytes] = useState<number>(DEFAULT_LIMIT_BYTES)
+  const [limitMetric, setLimitMetric] = useState<LimitMetric>(DEFAULTS.LIMIT_METRIC)
+  const [limitBytes, setLimitBytes] = useState<number>(DEFAULTS.LIMIT_BYTES)
   const [limitMbInput, setLimitMbInput] = useState<string>(
-    formatLimitMb(DEFAULT_LIMIT_BYTES)
+    formatLimitMb(DEFAULTS.LIMIT_BYTES)
   )
 
   useEffect(() => {
     chrome.storage.sync.get(
       [
-        DISPLAY_MODE_KEY,
-        MEASUREMENT_METHOD_KEY,
-        STANDALONE_AMS_PREVIEW_BADGE_KEY,
-        DISABLE_CACHE_KEY,
-        SHOW_CDP_STATUS_KEY,
-        BELOW_IFRAME_FULL_WIDTH_KEY,
-        ENABLE_SNAPSHOTS_KEY,
-        SHOW_WATERFALL_KEY,
-        FOCUS_OFFENDERS_KEY,
-        SHOW_ALERTS_KEY,
-        LIMIT_METRIC_KEY,
-        LIMIT_BYTES_KEY
+        STORAGE_KEYS.DISPLAY_MODE,
+        STORAGE_KEYS.MEASUREMENT_METHOD,
+        STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE,
+        STORAGE_KEYS.DISABLE_CACHE,
+        STORAGE_KEYS.SHOW_CDP_STATUS,
+        STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH,
+        STORAGE_KEYS.ENABLE_SNAPSHOTS,
+        STORAGE_KEYS.SHOW_WATERFALL,
+        STORAGE_KEYS.FOCUS_OFFENDERS,
+        STORAGE_KEYS.SHOW_ALERTS,
+        STORAGE_KEYS.SHOW_REQUEST_LIST,
+        STORAGE_KEYS.LIMIT_METRIC,
+        STORAGE_KEYS.LIMIT_BYTES
       ],
       (result) => {
-        setMode(parseDisplayMode(result[DISPLAY_MODE_KEY]))
-        setMeasurementMethod(parseMeasurementMethod(result[MEASUREMENT_METHOD_KEY]))
+        setMode(parsers.displayMode(result[STORAGE_KEYS.DISPLAY_MODE]))
+        setMeasurementMethod(parsers.measurementMethod(result[STORAGE_KEYS.MEASUREMENT_METHOD]))
         setStandaloneAmsPreviewBadgeEnabled(
-          parseStandaloneAmsPreviewBadgeEnabled(
-            result[STANDALONE_AMS_PREVIEW_BADGE_KEY]
+          parsers.standaloneAmsPreviewBadgeEnabled(
+            result[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE]
           )
         )
-        setDisableCache(parseDisableCache(result[DISABLE_CACHE_KEY]))
-        setShowCdpStatus(parseShowCdpStatus(result[SHOW_CDP_STATUS_KEY]))
+        setDisableCache(parsers.disableCache(result[STORAGE_KEYS.DISABLE_CACHE]))
+        setShowCdpStatus(parsers.showCdpStatus(result[STORAGE_KEYS.SHOW_CDP_STATUS]))
         setBelowIframeFullWidth(
-          parseBelowIframeFullWidth(result[BELOW_IFRAME_FULL_WIDTH_KEY])
+          parsers.belowIframeFullWidth(result[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH])
         )
-        setSnapshotsEnabled(parseEnableSnapshots(result[ENABLE_SNAPSHOTS_KEY]))
-        setWaterfallEnabled(parseShowWaterfall(result[SHOW_WATERFALL_KEY]))
-        setFocusOffendersEnabled(parseFocusOffenders(result[FOCUS_OFFENDERS_KEY]))
-        setAlertsEnabled(parseShowAlerts(result[SHOW_ALERTS_KEY]))
+        setSnapshotsEnabled(parsers.enableSnapshots(result[STORAGE_KEYS.ENABLE_SNAPSHOTS]))
+        setWaterfallEnabled(parsers.showWaterfall(result[STORAGE_KEYS.SHOW_WATERFALL]))
+        setFocusOffendersEnabled(parsers.focusOffenders(result[STORAGE_KEYS.FOCUS_OFFENDERS]))
+        setAlertsEnabled(parsers.showAlerts(result[STORAGE_KEYS.SHOW_ALERTS]))
+        setRequestListEnabled(parsers.showRequestList(result[STORAGE_KEYS.SHOW_REQUEST_LIST]))
 
-        const parsedLimitMetric = parseLimitMetric(result[LIMIT_METRIC_KEY])
-        const parsedLimitBytes = parseLimitBytes(result[LIMIT_BYTES_KEY])
+        const parsedLimitMetric = parsers.limitMetric(result[STORAGE_KEYS.LIMIT_METRIC])
+        const parsedLimitBytes = parsers.limitBytes(result[STORAGE_KEYS.LIMIT_BYTES])
         setLimitMetric(parsedLimitMetric)
         setLimitBytes(parsedLimitBytes)
         setLimitMbInput(formatLimitMb(parsedLimitBytes))
@@ -236,23 +208,23 @@ function IndexPopup() {
 
   const onSelectDisplayMode = (nextMode: DisplayMode) => {
     setMode(nextMode)
-    chrome.storage.sync.set({ [DISPLAY_MODE_KEY]: nextMode })
+    chrome.storage.sync.set({ [STORAGE_KEYS.DISPLAY_MODE]: nextMode })
   }
 
   const onSelectMeasurementMethod = (nextMethod: MeasurementMethod) => {
     setMeasurementMethod(nextMethod)
-    chrome.storage.sync.set({ [MEASUREMENT_METHOD_KEY]: nextMethod })
+    chrome.storage.sync.set({ [STORAGE_KEYS.MEASUREMENT_METHOD]: nextMethod })
   }
 
   const onSelectLimitMetric = (nextLimitMetric: LimitMetric) => {
     setLimitMetric(nextLimitMetric)
-    chrome.storage.sync.set({ [LIMIT_METRIC_KEY]: nextLimitMetric })
+    chrome.storage.sync.set({ [STORAGE_KEYS.LIMIT_METRIC]: nextLimitMetric })
   }
 
   const onSelectLimitPreset = (presetBytes: number) => {
     setLimitBytes(presetBytes)
     setLimitMbInput(formatLimitMb(presetBytes))
-    chrome.storage.sync.set({ [LIMIT_BYTES_KEY]: presetBytes })
+    chrome.storage.sync.set({ [STORAGE_KEYS.LIMIT_BYTES]: presetBytes })
   }
 
   const persistLimitMb = () => {
@@ -265,55 +237,61 @@ function IndexPopup() {
     const nextLimitBytes = Math.max(1, Math.round(parsedMb * 1024 * 1024))
     setLimitBytes(nextLimitBytes)
     setLimitMbInput(formatLimitMb(nextLimitBytes))
-    chrome.storage.sync.set({ [LIMIT_BYTES_KEY]: nextLimitBytes })
+    chrome.storage.sync.set({ [STORAGE_KEYS.LIMIT_BYTES]: nextLimitBytes })
   }
 
   const onToggleStandaloneAmsPreviewBadge = () => {
     const nextValue = !standaloneAmsPreviewBadgeEnabled
     setStandaloneAmsPreviewBadgeEnabled(nextValue)
-    chrome.storage.sync.set({ [STANDALONE_AMS_PREVIEW_BADGE_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE]: nextValue })
   }
 
   const onToggleDisableCache = () => {
     const nextValue = !disableCache
     setDisableCache(nextValue)
-    chrome.storage.sync.set({ [DISABLE_CACHE_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.DISABLE_CACHE]: nextValue })
   }
 
   const onToggleShowCdpStatus = () => {
     const nextValue = !showCdpStatus
     setShowCdpStatus(nextValue)
-    chrome.storage.sync.set({ [SHOW_CDP_STATUS_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.SHOW_CDP_STATUS]: nextValue })
   }
 
   const onToggleBelowIframeFullWidth = () => {
     const nextValue = !belowIframeFullWidth
     setBelowIframeFullWidth(nextValue)
-    chrome.storage.sync.set({ [BELOW_IFRAME_FULL_WIDTH_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]: nextValue })
   }
 
   const onToggleSnapshotsEnabled = () => {
     const nextValue = !snapshotsEnabled
     setSnapshotsEnabled(nextValue)
-    chrome.storage.sync.set({ [ENABLE_SNAPSHOTS_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.ENABLE_SNAPSHOTS]: nextValue })
   }
 
   const onToggleWaterfallEnabled = () => {
     const nextValue = !waterfallEnabled
     setWaterfallEnabled(nextValue)
-    chrome.storage.sync.set({ [SHOW_WATERFALL_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.SHOW_WATERFALL]: nextValue })
   }
 
   const onToggleFocusOffendersEnabled = () => {
     const nextValue = !focusOffendersEnabled
     setFocusOffendersEnabled(nextValue)
-    chrome.storage.sync.set({ [FOCUS_OFFENDERS_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.FOCUS_OFFENDERS]: nextValue })
   }
 
   const onToggleAlertsEnabled = () => {
     const nextValue = !alertsEnabled
     setAlertsEnabled(nextValue)
-    chrome.storage.sync.set({ [SHOW_ALERTS_KEY]: nextValue })
+    chrome.storage.sync.set({ [STORAGE_KEYS.SHOW_ALERTS]: nextValue })
+  }
+
+  const onToggleRequestListEnabled = () => {
+    const nextValue = !requestListEnabled
+    setRequestListEnabled(nextValue)
+    chrome.storage.sync.set({ [STORAGE_KEYS.SHOW_REQUEST_LIST]: nextValue })
   }
 
   const openSetupGuide = () => {
@@ -393,63 +371,22 @@ function IndexPopup() {
     }
   }, [showCdpStatus, measurementMethod])
 
-  const theme = useMemo(
-    () =>
-      isDarkTheme
-        ? {
-            background: "#2a2f3a",
-            surface: "#313745",
-            text: "#f3f5f9",
-            textMuted: "#b5bdcd",
-            shadowLight: "rgba(255, 255, 255, 0.05)",
-            shadowDark: "rgba(15, 18, 24, 0.6)",
-            accent: "#7dff6a"
-          }
-        : {
-            background: "#e8edf7",
-            surface: "#e8edf7",
-            text: "#1f2937",
-            textMuted: "#4b5563",
-            shadowLight: "rgba(255, 255, 255, 0.95)",
-            shadowDark: "rgba(154, 170, 207, 0.6)",
-            accent: "#0f7f5f"
-          },
-    [isDarkTheme]
-  )
+  const theme = useMemo(() => getTheme(isDarkTheme), [isDarkTheme])
 
   const cdpStatusUi = useMemo(() => {
     if (cdpStatus === "attached") {
-      return {
-        color: "#34d399",
-        label: "Attached"
-      }
+      return { color: "#34d399", label: "Attached" }
     }
-
     if (cdpStatus === "fallback") {
-      return {
-        color: "#f59e0b",
-        label: "Fallback"
-      }
+      return { color: "#f59e0b", label: "Fallback" }
     }
-
     if (cdpStatus === "error") {
-      return {
-        color: "#ef4444",
-        label: "Error"
-      }
+      return { color: "#ef4444", label: "Error" }
     }
-
     if (cdpStatus === "loading") {
-      return {
-        color: theme.textMuted,
-        label: "Checking..."
-      }
+      return { color: theme.textMuted, label: "Checking..." }
     }
-
-    return {
-      color: theme.textMuted,
-      label: "Disabled"
-    }
+    return { color: theme.textMuted, label: "Disabled" }
   }, [cdpStatus, theme.textMuted])
 
   const activeLimitPreset = useMemo(
@@ -494,55 +431,13 @@ function IndexPopup() {
     title: string,
     description: string
   ) => (
-    <button
-      aria-pressed={value}
-      onClick={onToggle}
-      style={{
-        display: "flex",
-        width: "100%",
-        marginTop: 10,
-        border: `1px solid ${value ? theme.accent : "transparent"}`,
-        borderRadius: 12,
-        padding: "10px 12px",
-        background: theme.surface,
-        color: theme.text,
-        cursor: "pointer",
-        textAlign: "left",
-        boxShadow: value
-          ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
-          : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-      }}
-      type="button">
-      <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{title}</span>
-        <span style={{ fontSize: 12, color: theme.textMuted }}>{description}</span>
-      </span>
-      <span
-        style={{
-          marginLeft: "auto",
-          width: 44,
-          height: 24,
-          borderRadius: 999,
-          background: value ? theme.accent : theme.background,
-          boxShadow: `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`,
-          position: "relative",
-          flexShrink: 0
-        }}>
-        <span
-          style={{
-            width: 18,
-            height: 18,
-            borderRadius: "50%",
-            background: theme.surface,
-            boxShadow: `2px 2px 4px ${theme.shadowDark}, -2px -2px 4px ${theme.shadowLight}`,
-            position: "absolute",
-            top: 3,
-            left: value ? 23 : 3,
-            transition: "left 120ms ease-out"
-          }}
-        />
-      </span>
-    </button>
+    <ToggleCard
+      value={value}
+      onToggle={onToggle}
+      title={title}
+      description={description}
+      theme={theme}
+    />
   )
 
   const renderOptionCards = <T extends string>(
@@ -556,57 +451,13 @@ function IndexPopup() {
     onSelect: (value: T) => void,
     ariaLabel: string
   ) => (
-    <div
-      aria-label={ariaLabel}
-      role="radiogroup"
-      style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {options.map((option) => {
-        const selected = selectedValue === option.value
-
-        return (
-          <button
-            aria-checked={selected}
-            aria-label={option.label}
-            key={option.value}
-            onClick={() => onSelect(option.value)}
-            role="radio"
-            type="button"
-            style={{
-              ...cardBaseStyle,
-              border: selected ? `1px solid ${theme.accent}` : "1px solid transparent",
-              boxShadow: selected
-                ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
-                : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
-            }}>
-            <span
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                flexShrink: 0,
-                fontSize: 11,
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: selected ? theme.surface : theme.textMuted,
-                background: selected ? theme.accent : theme.background,
-                boxShadow: selected
-                  ? `inset 2px 2px 4px ${theme.shadowDark}, inset -2px -2px 4px ${theme.shadowLight}`
-                  : `2px 2px 5px ${theme.shadowDark}, -2px -2px 5px ${theme.shadowLight}`
-              }}>
-              {option.badge}
-            </span>
-            <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{option.label}</span>
-              <span style={{ fontSize: 12, color: theme.textMuted }}>
-                {option.description}
-              </span>
-            </span>
-          </button>
-        )
-      })}
-    </div>
+    <OptionCards
+      options={options}
+      selectedValue={selectedValue}
+      onSelect={onSelect}
+      ariaLabel={ariaLabel}
+      theme={theme}
+    />
   )
 
   return (
@@ -697,28 +548,19 @@ function IndexPopup() {
               "Show alerts",
               "Adds actionable audit warnings below the status bar."
             )}
+            {renderToggleCard(
+              requestListEnabled,
+              onToggleRequestListEnabled,
+              "Show request list on hover",
+              "Shows detailed request list when hovering over the badge."
+            )}
 
             {showCdpStatus ? (
-              <div
-                style={{
-                  marginTop: 10,
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  border: `1px solid ${theme.accent}`,
-                  background: theme.surface,
-                  boxShadow: `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
-                }}>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
-                  CDP status:{" "}
-                  <span style={{ color: cdpStatusUi.color }}>{cdpStatusUi.label}</span>
-                </p>
-                {cdpStatusReason ? (
-                  <p
-                    style={{ margin: "6px 0 0", fontSize: 12, color: theme.textMuted }}>
-                    {cdpStatusReason}
-                  </p>
-                ) : null}
-              </div>
+              <CdpStatusDisplay
+                status={cdpStatus}
+                reason={cdpStatusReason}
+                theme={theme}
+              />
             ) : null}
           </section>
 

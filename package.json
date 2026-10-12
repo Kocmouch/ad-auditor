@@ -27,6 +27,7 @@
   "manifest": {
     "host_permissions": [
       "https://creatives-preview.rtbhouse.com/*",
+      "https://techtools.rtbhouse.biz/*",
       "https://statics.creativecdn.com/*",
       "https://ams.creativecdn.com/*"
     ],

@@ -1,33 +1,9 @@
 import type { PlasmoCSConfig } from "plasmo"
 
-import {
-  BELOW_IFRAME_FULL_WIDTH_KEY,
-  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
-  DEFAULT_ENABLE_SNAPSHOTS,
-  DEFAULT_FOCUS_OFFENDERS,
-  DEFAULT_LIMIT_BYTES,
-  DEFAULT_LIMIT_METRIC,
-  DEFAULT_SHOW_ALERTS,
-  DEFAULT_SHOW_WATERFALL,
-  DEFAULT_DISPLAY_MODE,
-  DISPLAY_MODE_KEY,
-  ENABLE_SNAPSHOTS_KEY,
-  FOCUS_OFFENDERS_KEY,
-  LIMIT_BYTES_KEY,
-  LIMIT_METRIC_KEY,
-  SHOW_ALERTS_KEY,
-  SHOW_WATERFALL_KEY,
-  type DisplayMode,
-  type LimitMetric,
-  parseDisplayMode,
-  parseBelowIframeFullWidth,
-  parseEnableSnapshots,
-  parseFocusOffenders,
-  parseShowAlerts,
-  parseLimitBytes,
-  parseLimitMetric,
-  parseShowWaterfall
-} from "~lib/display-mode"
+import type { DisplayMode, LimitMetric } from "~lib/types/settings"
+import { STORAGE_KEYS } from "~lib/storage/keys"
+import { DEFAULTS } from "~lib/storage/defaults"
+import { parsers } from "~lib/storage/parsers"
 import {
   buildEnglishAlerts,
   buildWaterfallLite,
@@ -41,12 +17,25 @@ import {
   type RequestStatusFilter
 } from "~lib/request-list"
 import { getUsageColor } from "~lib/usage-color"
+import { formatBytes, shortUrl } from "~lib/utils/formatters"
+import {
+  saveSnapshot as saveSnapshotUtil,
+  compareSnapshot as compareSnapshotUtil,
+  getSnapshotInfo,
+  type Totals
+} from "~lib/features/snapshot"
+import type { FontMismatch } from "~lib/features/font-checker"
 
 export const config: PlasmoCSConfig = {
-  matches: ["<all_urls>"]
+  matches: [
+    "https://creatives-preview.rtbhouse.com/*",
+    "https://techtools.rtbhouse.biz/*"
+  ],
+  all_frames: true
 }
 
 const SOURCE_ID = "ad-auditor"
+const TECHTOOLS_HOSTNAME = "techtools.rtbhouse.biz"
 const REQUEST_LIST_LIMIT = 100
 
 type StatsPayload = {
@@ -88,42 +77,21 @@ type BadgeState = {
   transferred: number
   transferredValue: HTMLSpanElement
   url: string
+  fontMismatches: FontMismatch[]
+  iframe: HTMLIFrameElement
 }
 
 const states = new Map<HTMLIFrameElement, BadgeState>()
-let displayMode: DisplayMode = DEFAULT_DISPLAY_MODE
-let limitMetric: LimitMetric = DEFAULT_LIMIT_METRIC
-let limitBytes = DEFAULT_LIMIT_BYTES
-let belowIframeFullWidth = DEFAULT_BELOW_IFRAME_FULL_WIDTH
-let snapshotsEnabled = DEFAULT_ENABLE_SNAPSHOTS
-let waterfallEnabled = DEFAULT_SHOW_WATERFALL
-let focusOffendersEnabled = DEFAULT_FOCUS_OFFENDERS
-let alertsEnabled = DEFAULT_SHOW_ALERTS
-const savedSnapshotsByUrl = new Map<
-  string,
-  { capturedAt: number; requestCount: number; resources: number; transferred: number }
->()
-
-const formatBytes = (bytes: number): string => {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-  }
-
-  return `${(bytes / 1024).toFixed(2)} KB`
-}
-
-const shortUrl = (url: string): string => {
-  if (!url) {
-    return "(unknown URL)"
-  }
-
-  const maxLength = 110
-  if (url.length <= maxLength) {
-    return url
-  }
-
-  return `${url.slice(0, maxLength - 1)}…`
-}
+let displayMode: DisplayMode = DEFAULTS.DISPLAY_MODE
+let limitMetric: LimitMetric = DEFAULTS.LIMIT_METRIC
+let limitBytes = DEFAULTS.LIMIT_BYTES
+let belowIframeFullWidth = DEFAULTS.BELOW_IFRAME_FULL_WIDTH
+let snapshotsEnabled = DEFAULTS.ENABLE_SNAPSHOTS
+let waterfallEnabled = DEFAULTS.SHOW_WATERFALL
+let focusOffendersEnabled = DEFAULTS.FOCUS_OFFENDERS
+let alertsEnabled = DEFAULTS.SHOW_ALERTS
+let requestListEnabled = DEFAULTS.SHOW_REQUEST_LIST
+const savedSnapshotsByUrl = new Map<string, Totals & { capturedAt: number }>()
 
 const syncTypeOptions = (state: BadgeState) => {
   const selectedType = state.requestTypeSelect.value || "all"
@@ -154,10 +122,8 @@ const updateSnapshotInfo = (state: BadgeState) => {
   }
 
   state.requestSnapshotRow.style.display = "flex"
-  const existing = savedSnapshotsByUrl.get(state.url)
-  state.requestSnapshotInfo.textContent = existing
-    ? `Saved ${new Date(existing.capturedAt).toLocaleTimeString()}`
-    : "No snapshot saved"
+  const info = getSnapshotInfo(state.url, savedSnapshotsByUrl)
+  state.requestSnapshotInfo.textContent = info
 }
 
 const saveSnapshot = (state: BadgeState) => {
@@ -165,33 +131,46 @@ const saveSnapshot = (state: BadgeState) => {
     return
   }
 
-  savedSnapshotsByUrl.set(state.url, {
-    capturedAt: Date.now(),
-    requestCount: state.requestCount,
+  const totals: Totals = {
+    requestItems: state.requestItems,
+    requests: state.requestCount,
     resources: state.resources,
     transferred: state.transferred
-  })
+  }
+
+  saveSnapshotUtil(state.url, totals, savedSnapshotsByUrl)
   updateSnapshotInfo(state)
 }
 
 const compareSnapshot = (state: BadgeState) => {
-  if (!state.url) {
-    state.requestSnapshotInfo.textContent = "No snapshot target URL available."
-    return
+  const currentTotals: Totals = {
+    requestItems: state.requestItems,
+    requests: state.requestCount,
+    resources: state.resources,
+    transferred: state.transferred
   }
 
-  const existing = savedSnapshotsByUrl.get(state.url)
-  if (!existing) {
-    state.requestSnapshotInfo.textContent = "No snapshot saved for this URL."
-    return
+  const result = compareSnapshotUtil(state.url, currentTotals, savedSnapshotsByUrl)
+  state.requestSnapshotInfo.textContent = result
+}
+
+const checkFontsInIframe = (iframe: HTMLIFrameElement, callback: (mismatches: FontMismatch[], iframeUrl: string) => void) => {
+  // Send request to iframe to check its fonts
+  const messageHandler = (event: MessageEvent) => {
+    if (event.data?.type === "ad-auditor-check-fonts-response" && event.source === iframe.contentWindow) {
+      window.removeEventListener("message", messageHandler)
+      callback(event.data.fontMismatches || [], event.data.iframeUrl || iframe.src || "unknown")
+    }
   }
 
-  const reqDelta = state.requestCount - existing.requestCount
-  const trDelta = Math.round((state.transferred - existing.transferred) / 1024)
-  const resDelta = Math.round((state.resources - existing.resources) / 1024)
-  const withSign = (value: number) => (value >= 0 ? `+${value}` : `${value}`)
+  window.addEventListener("message", messageHandler)
 
-  state.requestSnapshotInfo.textContent = `delta req ${withSign(reqDelta)}, delta tr ${withSign(trDelta)} KB, delta res ${withSign(resDelta)} KB`
+  // Timeout after 5 seconds
+  setTimeout(() => {
+    window.removeEventListener("message", messageHandler)
+  }, 5000)
+
+  iframe.contentWindow?.postMessage({ type: "ad-auditor-check-fonts-request" }, "*")
 }
 
 const updateAlerts = (state: BadgeState) => {
@@ -226,6 +205,11 @@ const updateAlerts = (state: BadgeState) => {
 }
 
 const updateRequestList = (state: BadgeState) => {
+  if (!requestListEnabled) {
+    state.requestListContainer.style.display = "none"
+    return
+  }
+
   const sourceItems = focusOffendersEnabled
     ? filterFocusOffenders(state.requestItems, limitBytes)
     : state.requestItems
@@ -602,7 +586,26 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "padding: 2px 8px",
       "font-size: 11px",
       "line-height: 1.2",
-      "cursor: pointer"
+      "cursor: pointer",
+      "margin-left: auto"
+    ].join(";")
+  )
+
+  const checkFontsButton = document.createElement("button")
+  checkFontsButton.type = "button"
+  checkFontsButton.textContent = "Check Fonts"
+  checkFontsButton.setAttribute(
+    "style",
+    [
+      "border: 1px solid #7dff6a",
+      "background: transparent",
+      "color: #7dff6a",
+      "border-radius: 4px",
+      "padding: 2px 8px",
+      "font-size: 11px",
+      "line-height: 1.2",
+      "cursor: pointer",
+      "margin-left: 4px"
     ].join(";")
   )
 
@@ -650,7 +653,9 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     resizeObserver,
     transferred: 0,
     transferredValue,
-    url: ""
+    url: "",
+    fontMismatches: [],
+    iframe
   }
 
   requestTypeSelect.addEventListener("change", () => updateRequestList(state))
@@ -662,6 +667,22 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   requestSnapshotCompareButton.addEventListener("click", () => compareSnapshot(state))
 
   openButton.addEventListener("click", () => openUrl(state.url))
+  checkFontsButton.addEventListener("click", () => {
+    checkFontsInIframe(iframe, (fontMismatches, iframeUrl) => {
+      state.fontMismatches = fontMismatches
+
+      // Send message to creatives-host.ts to display results
+      const iframes = Array.from(document.querySelectorAll<HTMLIFrameElement>("iframe"))
+      const iframeIndex = iframes.indexOf(iframe)
+
+      window.postMessage({
+        type: "ad-auditor-font-check-results",
+        fontMismatches: fontMismatches,
+        iframeUrl: iframeUrl,
+        iframeIndex: iframeIndex
+      }, "*")
+    })
+  })
   badge.addEventListener("mouseenter", () => {
     state.isRequestListHoverActive = true
     updateRequestList(state)
@@ -671,7 +692,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     state.requestListContainer.style.display = "none"
   })
 
-  badge.append(statsContainer, openButton, requestListContainer)
+  badge.append(statsContainer, openButton, checkFontsButton, requestListContainer)
 
   insertBadgeAfterIframe(iframe, badge)
   badge.insertAdjacentElement("afterend", alertsContainer)
@@ -700,9 +721,21 @@ const findIframeBySourceWindow = (
   return null
 }
 
+const isValidIframeContext = (iframe: HTMLIFrameElement): boolean => {
+  if (location.hostname === "creatives-preview.rtbhouse.com") {
+    return true
+  }
+
+  if (location.hostname === TECHTOOLS_HOSTNAME) {
+    return iframe.closest(".adturbo-preview") !== null
+  }
+
+  return false
+}
+
 const cleanupDetachedFrames = () => {
   Array.from(states.keys()).forEach((iframe) => {
-    if (!iframe.isConnected) {
+    if (!iframe.isConnected || !isValidIframeContext(iframe)) {
       removeState(iframe)
       return
     }
@@ -753,7 +786,7 @@ const handleStatsMessage = (event: MessageEvent) => {
   }
 
   const iframe = findIframeBySourceWindow(event.source)
-  if (!iframe) {
+  if (!iframe || !isValidIframeContext(iframe)) {
     return
   }
 
@@ -780,7 +813,8 @@ const setSettings = (
   nextSnapshotsEnabled: boolean,
   nextWaterfallEnabled: boolean,
   nextFocusOffendersEnabled: boolean,
-  nextAlertsEnabled: boolean
+  nextAlertsEnabled: boolean,
+  nextRequestListEnabled: boolean
 ) => {
   displayMode = nextDisplayMode
   limitMetric = nextLimitMetric
@@ -790,6 +824,7 @@ const setSettings = (
   waterfallEnabled = nextWaterfallEnabled
   focusOffendersEnabled = nextFocusOffendersEnabled
   alertsEnabled = nextAlertsEnabled
+  requestListEnabled = nextRequestListEnabled
 
   if (displayMode !== "below_iframe") {
     clearAllBadges()
@@ -804,25 +839,27 @@ const setSettings = (
 const loadSettings = () => {
   chrome.storage.sync.get(
     [
-      DISPLAY_MODE_KEY,
-      LIMIT_METRIC_KEY,
-      LIMIT_BYTES_KEY,
-      BELOW_IFRAME_FULL_WIDTH_KEY,
-      ENABLE_SNAPSHOTS_KEY,
-      SHOW_WATERFALL_KEY,
-      FOCUS_OFFENDERS_KEY,
-      SHOW_ALERTS_KEY
+      STORAGE_KEYS.DISPLAY_MODE,
+      STORAGE_KEYS.LIMIT_METRIC,
+      STORAGE_KEYS.LIMIT_BYTES,
+      STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH,
+      STORAGE_KEYS.ENABLE_SNAPSHOTS,
+      STORAGE_KEYS.SHOW_WATERFALL,
+      STORAGE_KEYS.FOCUS_OFFENDERS,
+      STORAGE_KEYS.SHOW_ALERTS,
+      STORAGE_KEYS.SHOW_REQUEST_LIST
     ],
     (result) => {
       setSettings(
-        parseDisplayMode(result[DISPLAY_MODE_KEY]),
-        parseLimitMetric(result[LIMIT_METRIC_KEY]),
-        parseLimitBytes(result[LIMIT_BYTES_KEY]),
-        parseBelowIframeFullWidth(result[BELOW_IFRAME_FULL_WIDTH_KEY]),
-        parseEnableSnapshots(result[ENABLE_SNAPSHOTS_KEY]),
-        parseShowWaterfall(result[SHOW_WATERFALL_KEY]),
-        parseFocusOffenders(result[FOCUS_OFFENDERS_KEY]),
-        parseShowAlerts(result[SHOW_ALERTS_KEY])
+        parsers.displayMode(result[STORAGE_KEYS.DISPLAY_MODE]),
+        parsers.limitMetric(result[STORAGE_KEYS.LIMIT_METRIC]),
+        parsers.limitBytes(result[STORAGE_KEYS.LIMIT_BYTES]),
+        parsers.belowIframeFullWidth(result[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]),
+        parsers.enableSnapshots(result[STORAGE_KEYS.ENABLE_SNAPSHOTS]),
+        parsers.showWaterfall(result[STORAGE_KEYS.SHOW_WATERFALL]),
+        parsers.focusOffenders(result[STORAGE_KEYS.FOCUS_OFFENDERS]),
+        parsers.showAlerts(result[STORAGE_KEYS.SHOW_ALERTS]),
+        parsers.showRequestList(result[STORAGE_KEYS.SHOW_REQUEST_LIST])
       )
     }
   )
@@ -842,43 +879,50 @@ const observeSettingsChanges = () => {
     let nextWaterfallEnabled = waterfallEnabled
     let nextFocusOffendersEnabled = focusOffendersEnabled
     let nextAlertsEnabled = alertsEnabled
+    let nextRequestListEnabled = requestListEnabled
 
-    if (changes[DISPLAY_MODE_KEY]) {
-      nextDisplayMode = parseDisplayMode(changes[DISPLAY_MODE_KEY].newValue)
+    if (changes[STORAGE_KEYS.DISPLAY_MODE]) {
+      nextDisplayMode = parsers.displayMode(changes[STORAGE_KEYS.DISPLAY_MODE].newValue)
     }
 
-    if (changes[LIMIT_METRIC_KEY]) {
-      nextLimitMetric = parseLimitMetric(changes[LIMIT_METRIC_KEY].newValue)
+    if (changes[STORAGE_KEYS.LIMIT_METRIC]) {
+      nextLimitMetric = parsers.limitMetric(changes[STORAGE_KEYS.LIMIT_METRIC].newValue)
     }
 
-    if (changes[LIMIT_BYTES_KEY]) {
-      nextLimitBytes = parseLimitBytes(changes[LIMIT_BYTES_KEY].newValue)
+    if (changes[STORAGE_KEYS.LIMIT_BYTES]) {
+      nextLimitBytes = parsers.limitBytes(changes[STORAGE_KEYS.LIMIT_BYTES].newValue)
     }
 
-    if (changes[BELOW_IFRAME_FULL_WIDTH_KEY]) {
-      nextBelowIframeFullWidth = parseBelowIframeFullWidth(
-        changes[BELOW_IFRAME_FULL_WIDTH_KEY].newValue
+    if (changes[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]) {
+      nextBelowIframeFullWidth = parsers.belowIframeFullWidth(
+        changes[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH].newValue
       )
     }
 
-    if (changes[ENABLE_SNAPSHOTS_KEY]) {
-      nextSnapshotsEnabled = parseEnableSnapshots(
-        changes[ENABLE_SNAPSHOTS_KEY].newValue
+    if (changes[STORAGE_KEYS.ENABLE_SNAPSHOTS]) {
+      nextSnapshotsEnabled = parsers.enableSnapshots(
+        changes[STORAGE_KEYS.ENABLE_SNAPSHOTS].newValue
       )
     }
 
-    if (changes[SHOW_WATERFALL_KEY]) {
-      nextWaterfallEnabled = parseShowWaterfall(changes[SHOW_WATERFALL_KEY].newValue)
+    if (changes[STORAGE_KEYS.SHOW_WATERFALL]) {
+      nextWaterfallEnabled = parsers.showWaterfall(changes[STORAGE_KEYS.SHOW_WATERFALL].newValue)
     }
 
-    if (changes[FOCUS_OFFENDERS_KEY]) {
-      nextFocusOffendersEnabled = parseFocusOffenders(
-        changes[FOCUS_OFFENDERS_KEY].newValue
+    if (changes[STORAGE_KEYS.FOCUS_OFFENDERS]) {
+      nextFocusOffendersEnabled = parsers.focusOffenders(
+        changes[STORAGE_KEYS.FOCUS_OFFENDERS].newValue
       )
     }
 
-    if (changes[SHOW_ALERTS_KEY]) {
-      nextAlertsEnabled = parseShowAlerts(changes[SHOW_ALERTS_KEY].newValue)
+    if (changes[STORAGE_KEYS.SHOW_ALERTS]) {
+      nextAlertsEnabled = parsers.showAlerts(changes[STORAGE_KEYS.SHOW_ALERTS].newValue)
+    }
+
+    if (changes[STORAGE_KEYS.SHOW_REQUEST_LIST]) {
+      nextRequestListEnabled = parsers.showRequestList(
+        changes[STORAGE_KEYS.SHOW_REQUEST_LIST].newValue
+      )
     }
 
     setSettings(
@@ -889,12 +933,14 @@ const observeSettingsChanges = () => {
       nextSnapshotsEnabled,
       nextWaterfallEnabled,
       nextFocusOffendersEnabled,
-      nextAlertsEnabled
+      nextAlertsEnabled,
+      nextRequestListEnabled
     )
   })
 }
 
 const init = () => {
+  // Only run if we are NOT in an iframe (we are on main page)
   if (window.self !== window.top) {
     return
   }

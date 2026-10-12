@@ -1,140 +1,62 @@
-export type DisplayMode = "inside_always" | "inside_hover" | "below_iframe"
-export type MeasurementMethod = "legacy_performance" | "enhanced_cdp"
-export type LimitMetric = "resources" | "transferred"
+// This file is kept for backwards compatibility
+// All functionality has been split into separate modules:
+// - lib/types/settings.ts - Type definitions
+// - lib/storage/keys.ts - Storage key constants
+// - lib/storage/defaults.ts - Default values
+// - lib/storage/parsers.ts - Parser functions
 
-export const SETTINGS_VERSION_KEY = "adAuditorSettingsVersion"
-export const CURRENT_SETTINGS_VERSION = 4
-export const DISPLAY_MODE_KEY = "adAuditorDisplayMode"
-export const STANDALONE_AMS_PREVIEW_BADGE_KEY =
-  "adAuditorStandaloneAmsPreviewBadgeEnabled"
-export const MEASUREMENT_METHOD_KEY = "adAuditorMeasurementMethod"
-export const LIMIT_METRIC_KEY = "adAuditorLimitMetric"
-export const LIMIT_BYTES_KEY = "adAuditorLimitBytes"
-export const DISABLE_CACHE_KEY = "adAuditorDisableCache"
-export const SHOW_CDP_STATUS_KEY = "adAuditorShowCdpStatus"
-export const BELOW_IFRAME_FULL_WIDTH_KEY = "adAuditorBelowIframeFullWidth"
-export const ENABLE_SNAPSHOTS_KEY = "adAuditorEnableSnapshots"
-export const SHOW_WATERFALL_KEY = "adAuditorShowWaterfall"
-export const FOCUS_OFFENDERS_KEY = "adAuditorFocusOffenders"
-export const SHOW_ALERTS_KEY = "adAuditorShowAlerts"
+export type { DisplayMode, MeasurementMethod, LimitMetric } from "~lib/types/settings"
 
-export const DEFAULT_DISPLAY_MODE: DisplayMode = "below_iframe"
-export const DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED = false
-export const DEFAULT_MEASUREMENT_METHOD: MeasurementMethod = "enhanced_cdp"
-export const DEFAULT_LIMIT_METRIC: LimitMetric = "resources"
-export const DEFAULT_LIMIT_BYTES = Math.round(2.5 * 1024 * 1024)
-export const DEFAULT_DISABLE_CACHE = true
-export const DEFAULT_SHOW_CDP_STATUS = false
-export const DEFAULT_BELOW_IFRAME_FULL_WIDTH = false
-export const DEFAULT_ENABLE_SNAPSHOTS = false
-export const DEFAULT_SHOW_WATERFALL = false
-export const DEFAULT_FOCUS_OFFENDERS = false
-export const DEFAULT_SHOW_ALERTS = false
+export {
+  STORAGE_KEYS,
+  CURRENT_SETTINGS_VERSION,
+  SETTINGS_VERSION_KEY,
+  DISPLAY_MODE_KEY,
+  STANDALONE_AMS_PREVIEW_BADGE_KEY,
+  MEASUREMENT_METHOD_KEY,
+  LIMIT_METRIC_KEY,
+  LIMIT_BYTES_KEY,
+  DISABLE_CACHE_KEY,
+  SHOW_CDP_STATUS_KEY,
+  BELOW_IFRAME_FULL_WIDTH_KEY,
+  ENABLE_SNAPSHOTS_KEY,
+  SHOW_WATERFALL_KEY,
+  FOCUS_OFFENDERS_KEY,
+  SHOW_ALERTS_KEY,
+  SHOW_REQUEST_LIST_KEY
+} from "~lib/storage/keys"
 
-export const parseDisplayMode = (value: unknown): DisplayMode => {
-  if (
-    value === "inside_always" ||
-    value === "inside_hover" ||
-    value === "below_iframe"
-  ) {
-    return value
-  }
+export {
+  DEFAULTS,
+  DEFAULT_DISPLAY_MODE,
+  DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED,
+  DEFAULT_MEASUREMENT_METHOD,
+  DEFAULT_LIMIT_METRIC,
+  DEFAULT_LIMIT_BYTES,
+  DEFAULT_DISABLE_CACHE,
+  DEFAULT_SHOW_CDP_STATUS,
+  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
+  DEFAULT_ENABLE_SNAPSHOTS,
+  DEFAULT_SHOW_WATERFALL,
+  DEFAULT_FOCUS_OFFENDERS,
+  DEFAULT_SHOW_ALERTS,
+  DEFAULT_SHOW_REQUEST_LIST
+} from "~lib/storage/defaults"
 
-  return DEFAULT_DISPLAY_MODE
-}
-
-export const parseStandaloneAmsPreviewBadgeEnabled = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED
-}
-
-export const parseMeasurementMethod = (value: unknown): MeasurementMethod => {
-  if (value === "legacy_performance" || value === "enhanced_cdp") {
-    return value
-  }
-
-  return DEFAULT_MEASUREMENT_METHOD
-}
-
-export const parseLimitMetric = (value: unknown): LimitMetric => {
-  if (value === "resources" || value === "transferred") {
-    return value
-  }
-
-  return DEFAULT_LIMIT_METRIC
-}
-
-export const parseLimitBytes = (value: unknown): number => {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return Math.round(value)
-  }
-
-  return DEFAULT_LIMIT_BYTES
-}
-
-export const parseDisableCache = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_DISABLE_CACHE
-}
-
-export const parseShowCdpStatus = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_SHOW_CDP_STATUS
-}
-
-export const parseBelowIframeFullWidth = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_BELOW_IFRAME_FULL_WIDTH
-}
-
-export const parseEnableSnapshots = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_ENABLE_SNAPSHOTS
-}
-
-export const parseShowWaterfall = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_SHOW_WATERFALL
-}
-
-export const parseFocusOffenders = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_FOCUS_OFFENDERS
-}
-
-export const parseShowAlerts = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value
-  }
-
-  return DEFAULT_SHOW_ALERTS
-}
-
-export const parseSettingsVersion = (value: unknown): number => {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-    return Math.floor(value)
-  }
-
-  return 0
-}
+export {
+  parsers,
+  parseDisplayMode,
+  parseStandaloneAmsPreviewBadgeEnabled,
+  parseMeasurementMethod,
+  parseLimitMetric,
+  parseLimitBytes,
+  parseDisableCache,
+  parseShowCdpStatus,
+  parseBelowIframeFullWidth,
+  parseEnableSnapshots,
+  parseShowWaterfall,
+  parseFocusOffenders,
+  parseShowAlerts,
+  parseShowRequestList,
+  parseSettingsVersion
+} from "~lib/storage/parsers"

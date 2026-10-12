@@ -1,325 +1,39 @@
+import { STORAGE_KEYS } from "~lib/storage/keys"
+import { parsers } from "~lib/storage/parsers"
+import type { DebuggeeWithSession, TabSession, RequestMetric, RequestDetails } from "~lib/cdp/types"
 import {
-  BELOW_IFRAME_FULL_WIDTH_KEY,
-  CURRENT_SETTINGS_VERSION,
-  DEFAULT_BELOW_IFRAME_FULL_WIDTH,
-  DEFAULT_DISPLAY_MODE,
-  DEFAULT_DISABLE_CACHE,
-  DEFAULT_ENABLE_SNAPSHOTS,
-  DEFAULT_FOCUS_OFFENDERS,
-  DEFAULT_MEASUREMENT_METHOD,
-  DEFAULT_SHOW_ALERTS,
-  DEFAULT_SHOW_CDP_STATUS,
-  DEFAULT_SHOW_WATERFALL,
-  DISABLE_CACHE_KEY,
-  DISPLAY_MODE_KEY,
-  ENABLE_SNAPSHOTS_KEY,
-  FOCUS_OFFENDERS_KEY,
-  MEASUREMENT_METHOD_KEY,
-  SETTINGS_VERSION_KEY,
-  SHOW_ALERTS_KEY,
-  SHOW_WATERFALL_KEY,
-  SHOW_CDP_STATUS_KEY,
-  parseDisableCache,
-  parseSettingsVersion
-} from "~lib/display-mode"
+  attachDebugger,
+  sendDebuggerCommand,
+  setCacheDisabledForDebuggee,
+  clearBrowserCacheForTab
+} from "~lib/cdp/debugger"
+import {
+  sessionsByTabId,
+  getOrCreateSession,
+  clearSessionMetrics,
+  removeSession
+} from "~lib/cdp/session-manager"
+import {
+  handleNetworkRequestWillBeSent,
+  handleNetworkDataReceived,
+  handleNetworkLoadingFinished,
+  handleNetworkLoadingFailed
+} from "~lib/cdp/network-tracker"
+import {
+  getInstallDefaults,
+  runSettingsMigration,
+  getDisableCacheValue
+} from "~lib/storage/settings"
+import {
+  isTargetAuditUrl,
+  isCacheControlUrl
+} from "~lib/utils/url-validators"
+import { getEnhancedStatsErrorPayload } from "~lib/cdp/enhanced-stats"
+import { normalizeDocumentUrl, getDocumentKey } from "~lib/utils/url-validators"
 
 const OPEN_TAB_DEDUPE_WINDOW_MS = 800
-const DEBUGGER_PROTOCOL_VERSION = "1.3"
 const lastOpenRequestByKey = new Map<string, number>()
-type DebuggeeWithSession = chrome.debugger.Debuggee & {
-  sessionId?: string
-}
-
-type RequestMetric = {
-  completed: boolean
-  decodedBytes: number
-  documentKey: string
-  documentUrl: string
-  encodedBytesFromChunks: number
-  frameId: string
-  finalEncodedBytes: number | null
-  loaderId: string
-  requestUrl: string
-  requestType: string
-  requestUrlHost: string
-  startedAt: number
-}
-
-type RequestDetails = {
-  host: string
-  resources: number
-  status: "done" | "pending"
-  transferred: number
-  type: string
-  url: string
-}
-
-type TabSession = {
-  attachError: string | null
-  attachPromise: Promise<void> | null
-  attached: boolean
-  childSessionIds: Set<string>
-  isTopNavigationInProgress: boolean
-  lastNavigationUrl: string
-  requestKeyByRequestId: Map<string, string>
-  requestSequenceByRequestId: Map<string, number>
-  requests: Map<string, RequestMetric>
-}
-
-const sessionsByTabId = new Map<number, TabSession>()
-
-const TARGET_HOSTS = new Set([
-  "creatives-preview.rtbhouse.com",
-  "statics.creativecdn.com",
-  "ams.creativecdn.com"
-])
-const CACHE_CONTROL_HOSTS = new Set([
-  "creatives-preview.rtbhouse.com",
-  "ams.creativecdn.com"
-])
-let disableCacheEnabled = DEFAULT_DISABLE_CACHE
-
-const asNumber = (value: unknown): number => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value
-  }
-
-  return 0
-}
-
-const getDocumentKey = (url: string): string => {
-  if (!url) {
-    return ""
-  }
-
-  try {
-    const parsed = new URL(normalizeDocumentUrl(url))
-    return `${parsed.origin.toLowerCase()}${parsed.pathname}${parsed.search}`
-  } catch {
-    return normalizeDocumentUrl(url)
-  }
-}
-
-const getUrlHost = (url: string): string => {
-  if (!url) {
-    return ""
-  }
-
-  try {
-    return new URL(url).hostname.toLowerCase()
-  } catch {
-    return ""
-  }
-}
-
-const normalizeDocumentUrl = (url: string): string => {
-  if (!url) {
-    return ""
-  }
-
-  try {
-    const parsed = new URL(url)
-    parsed.hash = ""
-    return parsed.toString()
-  } catch {
-    return url
-  }
-}
-
-const isTargetAuditUrl = (url: string): boolean => {
-  if (!url) {
-    return false
-  }
-
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === "https:" && TARGET_HOSTS.has(parsed.hostname)
-  } catch {
-    return false
-  }
-}
-
-const isCacheControlUrl = (url: string): boolean => {
-  if (!url) {
-    return false
-  }
-
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === "https:" && CACHE_CONTROL_HOSTS.has(parsed.hostname)
-  } catch {
-    return false
-  }
-}
-
-const getOrCreateSession = (tabId: number): TabSession => {
-  const existing = sessionsByTabId.get(tabId)
-  if (existing) {
-    return existing
-  }
-
-  const created: TabSession = {
-    attachError: null,
-    attachPromise: null,
-    attached: false,
-    childSessionIds: new Set<string>(),
-    isTopNavigationInProgress: false,
-    lastNavigationUrl: "",
-    requestKeyByRequestId: new Map<string, string>(),
-    requestSequenceByRequestId: new Map<string, number>(),
-    requests: new Map<string, RequestMetric>()
-  }
-
-  sessionsByTabId.set(tabId, created)
-  return created
-}
-
-const clearSessionMetrics = (session: TabSession) => {
-  session.requestKeyByRequestId.clear()
-  session.requestSequenceByRequestId.clear()
-  session.requests.clear()
-}
-
-const getStorageSyncValues = (
-  keys: string[]
-): Promise<Record<string, unknown>> =>
-  new Promise((resolve) => {
-    chrome.storage.sync.get(keys, (result) => {
-      resolve(result as Record<string, unknown>)
-    })
-  })
-
-const setStorageSyncValues = (
-  values: Record<string, unknown>
-): Promise<void> =>
-  new Promise((resolve) => {
-    chrome.storage.sync.set(values, () => resolve())
-  })
-
-const getInstallDefaults = (): Record<string, unknown> => ({
-  [DISPLAY_MODE_KEY]: DEFAULT_DISPLAY_MODE,
-  [MEASUREMENT_METHOD_KEY]: DEFAULT_MEASUREMENT_METHOD,
-  [DISABLE_CACHE_KEY]: DEFAULT_DISABLE_CACHE,
-  [SHOW_CDP_STATUS_KEY]: DEFAULT_SHOW_CDP_STATUS,
-  [BELOW_IFRAME_FULL_WIDTH_KEY]: DEFAULT_BELOW_IFRAME_FULL_WIDTH,
-  [ENABLE_SNAPSHOTS_KEY]: DEFAULT_ENABLE_SNAPSHOTS,
-  [SHOW_WATERFALL_KEY]: DEFAULT_SHOW_WATERFALL,
-  [FOCUS_OFFENDERS_KEY]: DEFAULT_FOCUS_OFFENDERS,
-  [SHOW_ALERTS_KEY]: DEFAULT_SHOW_ALERTS,
-  [SETTINGS_VERSION_KEY]: CURRENT_SETTINGS_VERSION
-})
-
-const runSettingsMigration = async () => {
-  const current = await getStorageSyncValues([
-    BELOW_IFRAME_FULL_WIDTH_KEY,
-    DISPLAY_MODE_KEY,
-    MEASUREMENT_METHOD_KEY,
-    DISABLE_CACHE_KEY,
-    ENABLE_SNAPSHOTS_KEY,
-    FOCUS_OFFENDERS_KEY,
-    SHOW_ALERTS_KEY,
-    SHOW_CDP_STATUS_KEY,
-    SHOW_WATERFALL_KEY,
-    SETTINGS_VERSION_KEY
-  ])
-  const updates: Record<string, unknown> = {}
-  const storedVersion = parseSettingsVersion(current[SETTINGS_VERSION_KEY])
-
-  if (storedVersion < CURRENT_SETTINGS_VERSION) {
-    if (typeof current[DISPLAY_MODE_KEY] === "undefined") {
-      updates[DISPLAY_MODE_KEY] = DEFAULT_DISPLAY_MODE
-    }
-
-    if (typeof current[MEASUREMENT_METHOD_KEY] === "undefined") {
-      updates[MEASUREMENT_METHOD_KEY] = DEFAULT_MEASUREMENT_METHOD
-    }
-
-    if (typeof current[DISABLE_CACHE_KEY] === "undefined") {
-      updates[DISABLE_CACHE_KEY] = DEFAULT_DISABLE_CACHE
-    }
-
-    if (typeof current[SHOW_CDP_STATUS_KEY] === "undefined") {
-      updates[SHOW_CDP_STATUS_KEY] = DEFAULT_SHOW_CDP_STATUS
-    }
-
-    if (typeof current[BELOW_IFRAME_FULL_WIDTH_KEY] === "undefined") {
-      updates[BELOW_IFRAME_FULL_WIDTH_KEY] = DEFAULT_BELOW_IFRAME_FULL_WIDTH
-    }
-
-    if (typeof current[ENABLE_SNAPSHOTS_KEY] === "undefined") {
-      updates[ENABLE_SNAPSHOTS_KEY] = DEFAULT_ENABLE_SNAPSHOTS
-    }
-
-    if (typeof current[SHOW_WATERFALL_KEY] === "undefined") {
-      updates[SHOW_WATERFALL_KEY] = DEFAULT_SHOW_WATERFALL
-    }
-
-    if (typeof current[FOCUS_OFFENDERS_KEY] === "undefined") {
-      updates[FOCUS_OFFENDERS_KEY] = DEFAULT_FOCUS_OFFENDERS
-    }
-
-    if (typeof current[SHOW_ALERTS_KEY] === "undefined") {
-      updates[SHOW_ALERTS_KEY] = DEFAULT_SHOW_ALERTS
-    }
-
-    updates[SETTINGS_VERSION_KEY] = CURRENT_SETTINGS_VERSION
-  }
-
-  if (Object.keys(updates).length > 0) {
-    await setStorageSyncValues(updates)
-  }
-
-  disableCacheEnabled = parseDisableCache(
-    Object.prototype.hasOwnProperty.call(updates, DISABLE_CACHE_KEY)
-      ? updates[DISABLE_CACHE_KEY]
-      : current[DISABLE_CACHE_KEY]
-  )
-}
-
-const sendDebuggerCommand = <T>(
-  debuggee: DebuggeeWithSession,
-  method: string,
-  params?: Record<string, unknown>
-): Promise<T> =>
-  new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand(
-      debuggee as chrome.debugger.Debuggee,
-      method,
-      params,
-      (result) => {
-        const err = chrome.runtime.lastError
-        if (err) {
-          reject(new Error(err.message))
-          return
-        }
-
-        resolve(result as T)
-      }
-    )
-  })
-
-const attachDebugger = (tabId: number): Promise<void> =>
-  new Promise((resolve, reject) => {
-    chrome.debugger.attach({ tabId }, DEBUGGER_PROTOCOL_VERSION, () => {
-      const err = chrome.runtime.lastError
-      if (err) {
-        reject(new Error(err.message))
-        return
-      }
-
-      resolve()
-    })
-  })
-
-const setCacheDisabledForDebuggee = async (debuggee: DebuggeeWithSession) => {
-  await sendDebuggerCommand<void>(debuggee, "Network.setCacheDisabled", {
-    cacheDisabled: disableCacheEnabled
-  })
-}
-
-const clearBrowserCacheForTab = async (tabId: number) => {
-  await sendDebuggerCommand<void>({ tabId }, "Network.clearBrowserCache")
-}
+let disableCacheEnabled = false
 
 const syncCachePolicyForSession = async (
   tabId: number,
@@ -331,14 +45,14 @@ const syncCachePolicyForSession = async (
   }
 
   try {
-    await setCacheDisabledForDebuggee({ tabId })
+    await setCacheDisabledForDebuggee({ tabId }, disableCacheEnabled)
   } catch {
     // Ignore when debugger target is not ready anymore.
   }
 
   for (const childSessionId of session.childSessionIds) {
     try {
-      await setCacheDisabledForDebuggee({ sessionId: childSessionId, tabId })
+      await setCacheDisabledForDebuggee({ sessionId: childSessionId, tabId }, disableCacheEnabled)
     } catch {
       // Ignore detached child targets.
     }
@@ -382,7 +96,7 @@ const ensureDebuggerAttached = async (tabId: number): Promise<TabSession> => {
           waitForDebuggerOnStart: false
         })
         await sendDebuggerCommand(rootDebuggee, "Network.enable")
-        await setCacheDisabledForDebuggee(rootDebuggee)
+        await setCacheDisabledForDebuggee(rootDebuggee, disableCacheEnabled)
         session.attached = true
         session.attachError = null
       } catch (error) {
@@ -478,101 +192,29 @@ const handleDebuggerEvent = (
       "Network.enable"
     )
       .then(() =>
-        setCacheDisabledForDebuggee({ sessionId: attachedSessionId, tabId })
+        setCacheDisabledForDebuggee({ sessionId: attachedSessionId, tabId }, disableCacheEnabled)
       )
       .catch(() => undefined)
     return
   }
 
   if (method === "Network.requestWillBeSent") {
-    const requestId = typeof params?.requestId === "string" ? params.requestId : ""
-    if (!requestId) {
-      return
-    }
-
-    const scopedRequestId = getScopedRequestId(source, requestId)
-    const hasRedirectResponse = Boolean(params?.redirectResponse)
-    const currentSequence =
-      session.requestSequenceByRequestId.get(scopedRequestId) ?? 0
-    const nextSequence = hasRedirectResponse ? currentSequence + 1 : currentSequence
-    session.requestSequenceByRequestId.set(scopedRequestId, nextSequence)
-
-    const requestKey = `${scopedRequestId}#${nextSequence}`
-    session.requestKeyByRequestId.set(scopedRequestId, requestKey)
-    const documentUrl = normalizeDocumentUrl(
-      typeof params?.documentURL === "string" ? params.documentURL : ""
-    )
-
-    const requestUrlRecord =
-      typeof params?.request === "object" && params.request !== null
-        ? (params.request as Record<string, unknown>)
-        : undefined
-    const requestUrlValue =
-      requestUrlRecord && typeof requestUrlRecord.url === "string"
-        ? requestUrlRecord.url
-        : ""
-    const requestType = typeof params?.type === "string" ? params.type : ""
-    const frameId = typeof params?.frameId === "string" ? params.frameId : ""
-    const loaderId = typeof params?.loaderId === "string" ? params.loaderId : ""
-    const normalizedRequestUrl = normalizeDocumentUrl(requestUrlValue)
-    const effectiveDocumentUrl =
-      documentUrl ||
-      (requestType === "Document" ? normalizedRequestUrl : "")
-
-    session.requests.set(requestKey, {
-      completed: false,
-      decodedBytes: 0,
-      documentKey: getDocumentKey(effectiveDocumentUrl),
-      documentUrl: effectiveDocumentUrl,
-      encodedBytesFromChunks: 0,
-      frameId,
-      finalEncodedBytes: null,
-      loaderId,
-      requestUrl: requestUrlValue,
-      requestType,
-      requestUrlHost: getUrlHost(requestUrlValue),
-      startedAt: Date.now()
-    })
+    handleNetworkRequestWillBeSent(session, source, params)
     return
   }
 
   if (method === "Network.dataReceived") {
-    const requestId = typeof params?.requestId === "string" ? params.requestId : ""
-    if (!requestId) {
-      return
-    }
-
-    const requestKey = getRequestKey(session, getScopedRequestId(source, requestId))
-    const metric = getOrCreateRequestMetric(session, requestKey)
-    metric.decodedBytes += asNumber(params?.dataLength)
-    metric.encodedBytesFromChunks += asNumber(params?.encodedDataLength)
+    handleNetworkDataReceived(session, source, params)
     return
   }
 
   if (method === "Network.loadingFinished") {
-    const requestId = typeof params?.requestId === "string" ? params.requestId : ""
-    if (!requestId) {
-      return
-    }
-
-    const requestKey = getRequestKey(session, getScopedRequestId(source, requestId))
-    const metric = getOrCreateRequestMetric(session, requestKey)
-    metric.completed = true
-    metric.finalEncodedBytes = asNumber(params?.encodedDataLength)
+    handleNetworkLoadingFinished(session, source, params)
     return
   }
 
   if (method === "Network.loadingFailed") {
-    const requestId = typeof params?.requestId === "string" ? params.requestId : ""
-    if (!requestId) {
-      return
-    }
-
-    const requestKey = getRequestKey(session, getScopedRequestId(source, requestId))
-    const metric = session.requests.get(requestKey)
-    if (metric) {
-      metric.completed = true
-    }
+    handleNetworkLoadingFailed(session, source, params)
   }
 }
 
@@ -701,19 +343,6 @@ const getEnhancedStatsForTab = async (tabId: number, documentUrl: string) => {
   }
 }
 
-const getEnhancedStatsErrorPayload = (reason: string) => ({
-  available: false,
-  requestDetails: [],
-  reason,
-  resources: 0,
-  tabRequestDetails: [],
-  tabResources: 0,
-  tabTrackedRequests: 0,
-  tabTransferred: 0,
-  trackedRequests: 0,
-  transferred: 0
-})
-
 const getCdpStatusForTab = async (tabId: number) => {
   const tab = await new Promise<chrome.tabs.Tab | null>((resolve) => {
     chrome.tabs.get(tabId, (resolvedTab) => {
@@ -833,7 +462,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     chrome.debugger.detach({ tabId }, () => undefined)
   }
 
-  sessionsByTabId.delete(tabId)
+  removeSession(tabId)
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -945,7 +574,9 @@ chrome.runtime.onInstalled.addListener((details) => {
   const defaults = getInstallDefaults()
 
   chrome.storage.sync.set(defaults, () => {
-    disableCacheEnabled = parseDisableCache(defaults[DISABLE_CACHE_KEY])
+    getDisableCacheValue().then((value) => {
+      disableCacheEnabled = value
+    }).catch(() => undefined)
 
     chrome.tabs.create({
       url: chrome.runtime.getURL("tabs/welcome.html")
@@ -953,14 +584,19 @@ chrome.runtime.onInstalled.addListener((details) => {
   })
 })
 
-runSettingsMigration().catch(() => undefined)
+runSettingsMigration()
+  .then(() => getDisableCacheValue())
+  .then((value) => {
+    disableCacheEnabled = value
+  })
+  .catch(() => undefined)
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "sync" || !changes[DISABLE_CACHE_KEY]) {
+  if (areaName !== "sync" || !changes[STORAGE_KEYS.DISABLE_CACHE]) {
     return
   }
 
-  const nextValue = parseDisableCache(changes[DISABLE_CACHE_KEY].newValue)
+  const nextValue = parsers.disableCache(changes[STORAGE_KEYS.DISABLE_CACHE].newValue)
   const shouldClearCache = !disableCacheEnabled && nextValue
   disableCacheEnabled = nextValue
   syncCachePolicyForAttachedTabs(shouldClearCache)

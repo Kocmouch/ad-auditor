@@ -1,37 +1,9 @@
 import type { PlasmoCSConfig } from "plasmo"
 
-import {
-  DEFAULT_ENABLE_SNAPSHOTS,
-  DEFAULT_FOCUS_OFFENDERS,
-  DEFAULT_LIMIT_BYTES,
-  DEFAULT_LIMIT_METRIC,
-  DEFAULT_MEASUREMENT_METHOD,
-  DEFAULT_SHOW_ALERTS,
-  DEFAULT_SHOW_WATERFALL,
-  DEFAULT_DISPLAY_MODE,
-  DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED,
-  DISPLAY_MODE_KEY,
-  ENABLE_SNAPSHOTS_KEY,
-  FOCUS_OFFENDERS_KEY,
-  LIMIT_BYTES_KEY,
-  LIMIT_METRIC_KEY,
-  MEASUREMENT_METHOD_KEY,
-  SHOW_ALERTS_KEY,
-  SHOW_WATERFALL_KEY,
-  STANDALONE_AMS_PREVIEW_BADGE_KEY,
-  type DisplayMode,
-  type LimitMetric,
-  type MeasurementMethod,
-  parseDisplayMode,
-  parseEnableSnapshots,
-  parseFocusOffenders,
-  parseShowAlerts,
-  parseLimitBytes,
-  parseLimitMetric,
-  parseMeasurementMethod,
-  parseShowWaterfall,
-  parseStandaloneAmsPreviewBadgeEnabled
-} from "~lib/display-mode"
+import type { DisplayMode, LimitMetric, MeasurementMethod } from "~lib/types/settings"
+import { STORAGE_KEYS } from "~lib/storage/keys"
+import { DEFAULTS } from "~lib/storage/defaults"
+import { parsers } from "~lib/storage/parsers"
 import {
   buildEnglishAlerts,
   buildWaterfallLite,
@@ -45,29 +17,35 @@ import {
   type RequestStatusFilter
 } from "~lib/request-list"
 import { getUsageColor } from "~lib/usage-color"
+import { formatBytes, shortUrl } from "~lib/utils/formatters"
+import {
+  checkFontsInDocument,
+  type FontMismatch
+} from "~lib/features/font-checker"
+import {
+  saveSnapshot,
+  compareSnapshot,
+  getSnapshotInfo,
+  type Totals
+} from "~lib/features/snapshot"
+import { createFontCheckResultsPanel } from "~lib/ui/font-results-panel"
 
 export const config: PlasmoCSConfig = {
   all_frames: true,
   matches: [
     "https://creatives-preview.rtbhouse.com/*",
+    "https://techtools.rtbhouse.biz/*",
     "https://statics.creativecdn.com/*",
     "https://ams.creativecdn.com/*"
   ]
 }
 
-const BADGE_ID = "ad-auditor-badge"
 const SOURCE_ID = "ad-auditor"
+const BADGE_ID = "ad-auditor-badge"
 const STATS_POST_THROTTLE_MS = 250
 const ENHANCED_POLL_MS = 500
 const AMS_PREVIEW_PATH = "/ad/creatives"
 const REQUEST_LIST_LIMIT = 100
-
-type Totals = {
-  requestItems: RequestItem[]
-  requests: number
-  resources: number
-  transferred: number
-}
 
 type RequestItem = RequestListItem
 
@@ -79,20 +57,22 @@ const isIframeContext = (() => {
   }
 })()
 
-let displayMode: DisplayMode = DEFAULT_DISPLAY_MODE
-let measurementMethod: MeasurementMethod = DEFAULT_MEASUREMENT_METHOD
-let standaloneAmsPreviewBadgeEnabled = DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED
-let limitMetric: LimitMetric = DEFAULT_LIMIT_METRIC
-let limitBytes = DEFAULT_LIMIT_BYTES
-let snapshotsEnabled = DEFAULT_ENABLE_SNAPSHOTS
-let waterfallEnabled = DEFAULT_SHOW_WATERFALL
-let focusOffendersEnabled = DEFAULT_FOCUS_OFFENDERS
-let alertsEnabled = DEFAULT_SHOW_ALERTS
+let displayMode: DisplayMode = DEFAULTS.DISPLAY_MODE
+let measurementMethod: MeasurementMethod = DEFAULTS.MEASUREMENT_METHOD
+let standaloneAmsPreviewBadgeEnabled = DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED
+let limitMetric: LimitMetric = DEFAULTS.LIMIT_METRIC
+let limitBytes = DEFAULTS.LIMIT_BYTES
+let snapshotsEnabled = DEFAULTS.ENABLE_SNAPSHOTS
+let waterfallEnabled = DEFAULTS.SHOW_WATERFALL
+let focusOffendersEnabled = DEFAULTS.FOCUS_OFFENDERS
+let alertsEnabled = DEFAULTS.SHOW_ALERTS
+let requestListEnabled = DEFAULTS.SHOW_REQUEST_LIST
 
 let badge: HTMLDivElement | null = null
 let requestListContainer: HTMLDivElement | null = null
 let requestListElement: HTMLUListElement | null = null
 let alertsContainer: HTMLDivElement | null = null
+let globalFontCheckResultsContainer: HTMLDivElement | null = null
 let waterfallContainer: HTMLDivElement | null = null
 let snapshotBar: HTMLDivElement | null = null
 let snapshotInfo: HTMLSpanElement | null = null
@@ -108,6 +88,7 @@ let requestsValueSpan: HTMLSpanElement | null = null
 let transferredValueSpan: HTMLSpanElement | null = null
 let resourcesValueSpan: HTMLSpanElement | null = null
 let openButton: HTMLButtonElement | null = null
+let checkFontsButton: HTMLButtonElement | null = null
 let isHoverActive = false
 let isRequestListHoverActive = false
 let lastStatsPostAt = 0
@@ -118,6 +99,7 @@ let latestTotalsForActions: Totals = {
   resources: 0,
   transferred: 0
 }
+let fontMismatches: FontMismatch[] = []
 const savedSnapshotsByUrl = new Map<string, Totals & { capturedAt: number }>()
 
 let legacyTotals: Totals = {
@@ -136,27 +118,6 @@ let enhancedStatsAvailable = false
 let enhancedPollTimerId: number | null = null
 let enhancedRequestInFlight = false
 
-const formatBytes = (bytes: number): string => {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-  }
-
-  return `${(bytes / 1024).toFixed(2)} KB`
-}
-
-const shortUrl = (url: string): string => {
-  if (!url) {
-    return "(unknown URL)"
-  }
-
-  const maxLength = 110
-  if (url.length <= maxLength) {
-    return url
-  }
-
-  return `${url.slice(0, maxLength - 1)}…`
-}
-
 const getCurrentAuditUrl = (): string => getEffectiveAuditUrl()
 
 const updateSnapshotControls = () => {
@@ -172,18 +133,12 @@ const updateSnapshotControls = () => {
   snapshotBar.style.display = "flex"
   const currentUrl = getCurrentAuditUrl()
   const existing = savedSnapshotsByUrl.get(currentUrl)
-  snapshotInfo.textContent = existing
-    ? `Saved ${new Date(existing.capturedAt).toLocaleTimeString()}`
-    : "No snapshot saved"
+  snapshotInfo.textContent = getSnapshotInfo(currentUrl, savedSnapshotsByUrl)
 }
 
 const saveCurrentSnapshot = () => {
   const currentUrl = getCurrentAuditUrl()
-  savedSnapshotsByUrl.set(currentUrl, {
-    ...latestTotalsForActions,
-    capturedAt: Date.now()
-  })
-
+  saveSnapshot(currentUrl, latestTotalsForActions, savedSnapshotsByUrl)
   updateSnapshotControls()
 }
 
@@ -193,18 +148,11 @@ const compareWithSavedSnapshot = () => {
   }
 
   const currentUrl = getCurrentAuditUrl()
-  const saved = savedSnapshotsByUrl.get(currentUrl)
-  if (!saved) {
-    snapshotInfo.textContent = "No snapshot saved for this URL."
-    return
-  }
-
-  const transferredDelta = latestTotalsForActions.transferred - saved.transferred
-  const resourcesDelta = latestTotalsForActions.resources - saved.resources
-  const requestsDelta = latestTotalsForActions.requests - saved.requests
-  const formatSigned = (value: number) => (value >= 0 ? `+${value}` : `${value}`)
-
-  snapshotInfo.textContent = `delta req ${formatSigned(requestsDelta)}, delta tr ${formatSigned(Math.round(transferredDelta / 1024))} KB, delta res ${formatSigned(Math.round(resourcesDelta / 1024))} KB`
+  snapshotInfo.textContent = compareSnapshot(
+    currentUrl,
+    latestTotalsForActions,
+    savedSnapshotsByUrl
+  )
 }
 
 const syncRequestTypeOptions = (items: RequestItem[]) => {
@@ -288,6 +236,11 @@ const renderRequestListUi = () => {
     !requestShowAllCheckbox ||
     !requestSummary
   ) {
+    return
+  }
+
+  if (!requestListEnabled) {
+    requestListContainer.style.display = "none"
     return
   }
 
@@ -507,13 +460,67 @@ const openInNewTab = () => {
   requestOpenInNewTab(getEffectiveAuditUrl())
 }
 
-const applyBadgeLayout = (showOpenButton: boolean) => {
+const handleCheckFonts = () => {
+  fontMismatches = checkFontsInDocument()
+
+  if (isIframeContext && window.parent !== window) {
+    window.parent.postMessage(
+      {
+        source: SOURCE_ID,
+        type: "font-check-results",
+        fontMismatches: fontMismatches,
+        iframeUrl: window.location.href
+      },
+      "*"
+    )
+  } else {
+    renderFontCheckResultsLocally()
+  }
+}
+
+const renderFontCheckResultsLocally = () => {
+  if (!globalFontCheckResultsContainer || !document.body.contains(globalFontCheckResultsContainer)) {
+    const theme = {
+      background: "#2a2f3a",
+      surface: "#313745",
+      text: "#f3f5f9",
+      textMuted: "#b5bdcd",
+      shadowLight: "rgba(255, 255, 255, 0.05)",
+      shadowDark: "rgba(15, 18, 24, 0.6)",
+      accent: "#7dff6a"
+    }
+    globalFontCheckResultsContainer = createFontCheckResultsPanel(fontMismatches, theme)
+    document.body.appendChild(globalFontCheckResultsContainer)
+    return
+  }
+
+  const theme = {
+    background: "#2a2f3a",
+    surface: "#313745",
+    text: "#f3f5f9",
+    textMuted: "#b5bdcd",
+    shadowLight: "rgba(255, 255, 255, 0.05)",
+    shadowDark: "rgba(15, 18, 24, 0.6)",
+    accent: "#7dff6a"
+  }
+
+  const newPanel = createFontCheckResultsPanel(fontMismatches, theme)
+  globalFontCheckResultsContainer.replaceWith(newPanel)
+  globalFontCheckResultsContainer = newPanel
+}
+
+const applyBadgeLayout = (showOpenButton: boolean, showCheckFontsButton: boolean) => {
   if (!badge || !openButton) {
     return
   }
 
   openButton.style.display = showOpenButton ? "inline-flex" : "none"
-  badge.style.justifyContent = showOpenButton ? "space-between" : "flex-start"
+
+  if (checkFontsButton) {
+    checkFontsButton.style.display = showCheckFontsButton ? "inline-flex" : "none"
+  }
+
+  badge.style.justifyContent = (showOpenButton || showCheckFontsButton) ? "space-between" : "flex-start"
 }
 
 const applyBadgeVisibility = (hoverEnabled: boolean) => {
@@ -531,7 +538,7 @@ const applyBadgeVisibility = (hoverEnabled: boolean) => {
   badge.style.pointerEvents = "auto"
 }
 
-const ensureBadge = (showOpenButton: boolean) => {
+const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => {
   if (!document.body) {
     return
   }
@@ -550,6 +557,7 @@ const ensureBadge = (showOpenButton: boolean) => {
     !transferredValueSpan ||
     !resourcesValueSpan ||
     !openButton ||
+    !checkFontsButton ||
     !badge.isConnected
   ) {
     const nextBadge = document.createElement("div")
@@ -744,10 +752,33 @@ const ensureBadge = (showOpenButton: boolean) => {
         "font-size: 11px",
         "line-height: 1.2",
         "cursor: pointer",
-        "margin-left: auto"
+        "margin-left: auto",
+        "position: relative",
+        "z-index: 1"
       ].join(";")
     )
     nextOpenButton.addEventListener("click", openInNewTab)
+
+    const nextCheckFontsButton = document.createElement("button")
+    nextCheckFontsButton.type = "button"
+    nextCheckFontsButton.textContent = "Check Fonts"
+    nextCheckFontsButton.setAttribute(
+      "style",
+      [
+        "border: 1px solid #7dff6a",
+        "background: transparent",
+        "color: #7dff6a",
+        "border-radius: 4px",
+        "padding: 2px 8px",
+        "font-size: 11px",
+        "line-height: 1.2",
+        "cursor: pointer",
+        "margin-left: 4px",
+        "position: relative",
+        "z-index: 1"
+      ].join(";")
+    )
+    nextCheckFontsButton.addEventListener("click", handleCheckFonts)
 
     const nextAlertsContainer = document.createElement("div")
     nextAlertsContainer.setAttribute(
@@ -771,6 +802,7 @@ const ensureBadge = (showOpenButton: boolean) => {
     nextBadge.append(
       statsContainer,
       nextOpenButton,
+      nextCheckFontsButton,
       nextRequestListContainer,
       nextAlertsContainer
     )
@@ -820,9 +852,10 @@ const ensureBadge = (showOpenButton: boolean) => {
     transferredValueSpan = nextTransferredValue
     resourcesValueSpan = nextResourcesValue
     openButton = nextOpenButton
+    checkFontsButton = nextCheckFontsButton
   }
 
-  applyBadgeLayout(showOpenButton)
+  applyBadgeLayout(showOpenButton, showCheckFontsButton)
 }
 
 const removeBadge = () => {
@@ -849,8 +882,10 @@ const removeBadge = () => {
   transferredValueSpan = null
   resourcesValueSpan = null
   openButton = null
+  checkFontsButton = null
   isRequestListHoverActive = false
   latestRequestItems = []
+  fontMismatches = []
   latestTotalsForActions = {
     requestItems: [],
     requests: 0,
@@ -890,7 +925,9 @@ const updateAlertsUi = (totals: Totals) => {
   }
 
   const alerts = buildEnglishAlerts(totals, totals.requestItems, limitBytes)
-  if (alerts.length === 0) {
+  const hasNetworkAlerts = alerts.length > 0 && alerts[0] !== "No obvious network issues detected."
+
+  if (!hasNetworkAlerts) {
     alertsContainer.style.display = "none"
     alertsContainer.textContent = ""
     return
@@ -956,7 +993,7 @@ const render = () => {
       return
     }
 
-    ensureBadge(false)
+    ensureBadge(false, true)
     if (transferredValueSpan) {
       transferredValueSpan.textContent = transferredText
     }
@@ -979,7 +1016,7 @@ const render = () => {
     return
   }
 
-  ensureBadge(true)
+  ensureBadge(false, true)
   if (transferredValueSpan) {
     transferredValueSpan.textContent = transferredText
   }
@@ -1099,7 +1136,8 @@ const setSettings = (
   nextSnapshotsEnabled: boolean,
   nextWaterfallEnabled: boolean,
   nextFocusOffendersEnabled: boolean,
-  nextAlertsEnabled: boolean
+  nextAlertsEnabled: boolean,
+  nextRequestListEnabled: boolean
 ) => {
   displayMode = nextDisplayMode
   measurementMethod = nextMeasurementMethod
@@ -1110,6 +1148,7 @@ const setSettings = (
   waterfallEnabled = nextWaterfallEnabled
   focusOffendersEnabled = nextFocusOffendersEnabled
   alertsEnabled = nextAlertsEnabled
+  requestListEnabled = nextRequestListEnabled
   updateSnapshotControls()
   syncEnhancedPolling()
   render()
@@ -1118,29 +1157,31 @@ const setSettings = (
 const loadSettings = () => {
   chrome.storage.sync.get(
     [
-      DISPLAY_MODE_KEY,
-      MEASUREMENT_METHOD_KEY,
-      STANDALONE_AMS_PREVIEW_BADGE_KEY,
-      ENABLE_SNAPSHOTS_KEY,
-      SHOW_WATERFALL_KEY,
-      FOCUS_OFFENDERS_KEY,
-      SHOW_ALERTS_KEY,
-      LIMIT_METRIC_KEY,
-      LIMIT_BYTES_KEY
+      STORAGE_KEYS.DISPLAY_MODE,
+      STORAGE_KEYS.MEASUREMENT_METHOD,
+      STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE,
+      STORAGE_KEYS.ENABLE_SNAPSHOTS,
+      STORAGE_KEYS.SHOW_WATERFALL,
+      STORAGE_KEYS.FOCUS_OFFENDERS,
+      STORAGE_KEYS.SHOW_ALERTS,
+      STORAGE_KEYS.SHOW_REQUEST_LIST,
+      STORAGE_KEYS.LIMIT_METRIC,
+      STORAGE_KEYS.LIMIT_BYTES
     ],
     (result) => {
       setSettings(
-        parseDisplayMode(result[DISPLAY_MODE_KEY]),
-        parseMeasurementMethod(result[MEASUREMENT_METHOD_KEY]),
-        parseStandaloneAmsPreviewBadgeEnabled(
-          result[STANDALONE_AMS_PREVIEW_BADGE_KEY]
+        parsers.displayMode(result[STORAGE_KEYS.DISPLAY_MODE]),
+        parsers.measurementMethod(result[STORAGE_KEYS.MEASUREMENT_METHOD]),
+        parsers.standaloneAmsPreviewBadgeEnabled(
+          result[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE]
         ),
-        parseLimitMetric(result[LIMIT_METRIC_KEY]),
-        parseLimitBytes(result[LIMIT_BYTES_KEY]),
-        parseEnableSnapshots(result[ENABLE_SNAPSHOTS_KEY]),
-        parseShowWaterfall(result[SHOW_WATERFALL_KEY]),
-        parseFocusOffenders(result[FOCUS_OFFENDERS_KEY]),
-        parseShowAlerts(result[SHOW_ALERTS_KEY])
+        parsers.limitMetric(result[STORAGE_KEYS.LIMIT_METRIC]),
+        parsers.limitBytes(result[STORAGE_KEYS.LIMIT_BYTES]),
+        parsers.enableSnapshots(result[STORAGE_KEYS.ENABLE_SNAPSHOTS]),
+        parsers.showWaterfall(result[STORAGE_KEYS.SHOW_WATERFALL]),
+        parsers.focusOffenders(result[STORAGE_KEYS.FOCUS_OFFENDERS]),
+        parsers.showAlerts(result[STORAGE_KEYS.SHOW_ALERTS]),
+        parsers.showRequestList(result[STORAGE_KEYS.SHOW_REQUEST_LIST])
       )
     }
   )
@@ -1161,51 +1202,58 @@ const observeSettingsChanges = () => {
     let nextWaterfallEnabled = waterfallEnabled
     let nextFocusOffendersEnabled = focusOffendersEnabled
     let nextAlertsEnabled = alertsEnabled
+    let nextRequestListEnabled = requestListEnabled
 
-    if (changes[DISPLAY_MODE_KEY]) {
-      nextDisplayMode = parseDisplayMode(changes[DISPLAY_MODE_KEY].newValue)
+    if (changes[STORAGE_KEYS.DISPLAY_MODE]) {
+      nextDisplayMode = parsers.displayMode(changes[STORAGE_KEYS.DISPLAY_MODE].newValue)
     }
 
-    if (changes[MEASUREMENT_METHOD_KEY]) {
-      nextMeasurementMethod = parseMeasurementMethod(
-        changes[MEASUREMENT_METHOD_KEY].newValue
+    if (changes[STORAGE_KEYS.MEASUREMENT_METHOD]) {
+      nextMeasurementMethod = parsers.measurementMethod(
+        changes[STORAGE_KEYS.MEASUREMENT_METHOD].newValue
       )
     }
 
-    if (changes[STANDALONE_AMS_PREVIEW_BADGE_KEY]) {
-      nextStandaloneAmsPreviewBadgeEnabled = parseStandaloneAmsPreviewBadgeEnabled(
-        changes[STANDALONE_AMS_PREVIEW_BADGE_KEY].newValue
+    if (changes[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE]) {
+      nextStandaloneAmsPreviewBadgeEnabled = parsers.standaloneAmsPreviewBadgeEnabled(
+        changes[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE].newValue
       )
     }
 
-    if (changes[LIMIT_METRIC_KEY]) {
-      nextLimitMetric = parseLimitMetric(changes[LIMIT_METRIC_KEY].newValue)
+    if (changes[STORAGE_KEYS.LIMIT_METRIC]) {
+      nextLimitMetric = parsers.limitMetric(changes[STORAGE_KEYS.LIMIT_METRIC].newValue)
     }
 
-    if (changes[LIMIT_BYTES_KEY]) {
-      nextLimitBytes = parseLimitBytes(changes[LIMIT_BYTES_KEY].newValue)
+    if (changes[STORAGE_KEYS.LIMIT_BYTES]) {
+      nextLimitBytes = parsers.limitBytes(changes[STORAGE_KEYS.LIMIT_BYTES].newValue)
     }
 
-    if (changes[ENABLE_SNAPSHOTS_KEY]) {
-      nextSnapshotsEnabled = parseEnableSnapshots(
-        changes[ENABLE_SNAPSHOTS_KEY].newValue
+    if (changes[STORAGE_KEYS.ENABLE_SNAPSHOTS]) {
+      nextSnapshotsEnabled = parsers.enableSnapshots(
+        changes[STORAGE_KEYS.ENABLE_SNAPSHOTS].newValue
       )
     }
 
-    if (changes[SHOW_WATERFALL_KEY]) {
-      nextWaterfallEnabled = parseShowWaterfall(
-        changes[SHOW_WATERFALL_KEY].newValue
+    if (changes[STORAGE_KEYS.SHOW_WATERFALL]) {
+      nextWaterfallEnabled = parsers.showWaterfall(
+        changes[STORAGE_KEYS.SHOW_WATERFALL].newValue
       )
     }
 
-    if (changes[FOCUS_OFFENDERS_KEY]) {
-      nextFocusOffendersEnabled = parseFocusOffenders(
-        changes[FOCUS_OFFENDERS_KEY].newValue
+    if (changes[STORAGE_KEYS.FOCUS_OFFENDERS]) {
+      nextFocusOffendersEnabled = parsers.focusOffenders(
+        changes[STORAGE_KEYS.FOCUS_OFFENDERS].newValue
       )
     }
 
-    if (changes[SHOW_ALERTS_KEY]) {
-      nextAlertsEnabled = parseShowAlerts(changes[SHOW_ALERTS_KEY].newValue)
+    if (changes[STORAGE_KEYS.SHOW_ALERTS]) {
+      nextAlertsEnabled = parsers.showAlerts(changes[STORAGE_KEYS.SHOW_ALERTS].newValue)
+    }
+
+    if (changes[STORAGE_KEYS.SHOW_REQUEST_LIST]) {
+      nextRequestListEnabled = parsers.showRequestList(
+        changes[STORAGE_KEYS.SHOW_REQUEST_LIST].newValue
+      )
     }
 
     setSettings(
@@ -1217,7 +1265,8 @@ const observeSettingsChanges = () => {
       nextSnapshotsEnabled,
       nextWaterfallEnabled,
       nextFocusOffendersEnabled,
-      nextAlertsEnabled
+      nextAlertsEnabled,
+      nextRequestListEnabled
     )
   })
 }
