@@ -1,9 +1,16 @@
 import type { PlasmoCSConfig } from "plasmo"
 
-import type { DisplayMode, LimitMetric, MeasurementMethod } from "~lib/types/settings"
-import { STORAGE_KEYS } from "~lib/storage/keys"
-import { DEFAULTS } from "~lib/storage/defaults"
-import { parsers } from "~lib/storage/parsers"
+import {
+  checkFontsInDocument,
+  clearFontHighlights,
+  type FontMismatch
+} from "~lib/features/font-checker"
+import {
+  compareSnapshot,
+  getSnapshotInfo,
+  saveSnapshot,
+  type Totals
+} from "~lib/features/snapshot"
 import {
   buildEnglishAlerts,
   buildWaterfallLite,
@@ -16,20 +23,17 @@ import {
   type RequestSort,
   type RequestStatusFilter
 } from "~lib/request-list"
+import { DEFAULTS } from "~lib/storage/defaults"
+import { STORAGE_KEYS } from "~lib/storage/keys"
+import { parsers } from "~lib/storage/parsers"
+import type {
+  DisplayMode,
+  LimitMetric,
+  MeasurementMethod
+} from "~lib/types/settings"
+import { createFontCheckResultsPanel } from "~lib/ui/font-results-panel"
 import { getUsageColor } from "~lib/usage-color"
 import { formatBytes, shortUrl } from "~lib/utils/formatters"
-import {
-  checkFontsInDocument,
-  clearFontHighlights,
-  type FontMismatch
-} from "~lib/features/font-checker"
-import {
-  saveSnapshot,
-  compareSnapshot,
-  getSnapshotInfo,
-  type Totals
-} from "~lib/features/snapshot"
-import { createFontCheckResultsPanel } from "~lib/ui/font-results-panel"
 
 export const config: PlasmoCSConfig = {
   all_frames: true,
@@ -60,7 +64,8 @@ const isIframeContext = (() => {
 
 let displayMode: DisplayMode = DEFAULTS.DISPLAY_MODE
 let measurementMethod: MeasurementMethod = DEFAULTS.MEASUREMENT_METHOD
-let standaloneAmsPreviewBadgeEnabled = DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED
+let standaloneAmsPreviewBadgeEnabled =
+  DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED
 let limitMetric: LimitMetric = DEFAULTS.LIMIT_METRIC
 let limitBytes = DEFAULTS.LIMIT_BYTES
 let snapshotsEnabled = DEFAULTS.ENABLE_SNAPSHOTS
@@ -122,7 +127,12 @@ let enhancedRequestInFlight = false
 const getCurrentAuditUrl = (): string => getEffectiveAuditUrl()
 
 const updateSnapshotControls = () => {
-  if (!snapshotBar || !snapshotInfo || !saveSnapshotButton || !compareSnapshotButton) {
+  if (
+    !snapshotBar ||
+    !snapshotInfo ||
+    !saveSnapshotButton ||
+    !compareSnapshotButton
+  ) {
     return
   }
 
@@ -280,7 +290,9 @@ const renderRequestListUi = () => {
   )
 
   requestSummary.textContent = `${result.visibleItems.length}/${result.filteredCount}/${result.totalCount} requests${focusOffendersEnabled ? " (focus)" : ""}`
-  requestListContainer.style.display = isRequestListHoverActive ? "flex" : "none"
+  requestListContainer.style.display = isRequestListHoverActive
+    ? "flex"
+    : "none"
   renderWaterfallLite(result.visibleItems)
 
   for (const item of result.visibleItems) {
@@ -344,9 +356,9 @@ const getLegacyTotals = (): Totals => {
   const resourceEntries = performance.getEntriesByType(
     "resource"
   ) as PerformanceResourceTiming[]
-  const navigationEntry = performance.getEntriesByType(
-    "navigation"
-  )[0] as PerformanceNavigationTiming | undefined
+  const navigationEntry = performance.getEntriesByType("navigation")[0] as
+    | PerformanceNavigationTiming
+    | undefined
 
   const requestItems: RequestItem[] = []
   const totals: Totals = {
@@ -366,7 +378,10 @@ const getLegacyTotals = (): Totals => {
           return ""
         }
       })(),
-      resources: Math.max(0, entry.decodedBodySize || entry.encodedBodySize || 0),
+      resources: Math.max(
+        0,
+        entry.decodedBodySize || entry.encodedBodySize || 0
+      ),
       status: "done",
       transferred: Math.max(0, entry.transferSize || 0),
       type: entry.initiatorType || "resource",
@@ -429,9 +444,7 @@ const getNestedAmsPreviewUrl = (): string => {
       if (isAmsPreview) {
         return parsed.toString()
       }
-    } catch {
-      // Ignore malformed src values.
-    }
+    } catch {}
   }
 
   return ""
@@ -480,7 +493,10 @@ const handleCheckFonts = () => {
 }
 
 const renderFontCheckResultsLocally = () => {
-  if (!globalFontCheckResultsContainer || !document.body.contains(globalFontCheckResultsContainer)) {
+  if (
+    !globalFontCheckResultsContainer ||
+    !document.body.contains(globalFontCheckResultsContainer)
+  ) {
     const theme = {
       background: "#2a2f3a",
       surface: "#313745",
@@ -490,7 +506,10 @@ const renderFontCheckResultsLocally = () => {
       shadowDark: "rgba(15, 18, 24, 0.6)",
       accent: "#7dff6a"
     }
-    globalFontCheckResultsContainer = createFontCheckResultsPanel(fontMismatches, theme)
+    globalFontCheckResultsContainer = createFontCheckResultsPanel(
+      fontMismatches,
+      theme
+    )
     document.body.appendChild(globalFontCheckResultsContainer)
     return
   }
@@ -510,7 +529,10 @@ const renderFontCheckResultsLocally = () => {
   globalFontCheckResultsContainer = newPanel
 }
 
-const applyBadgeLayout = (showOpenButton: boolean, showCheckFontsButton: boolean) => {
+const applyBadgeLayout = (
+  showOpenButton: boolean,
+  showCheckFontsButton: boolean
+) => {
   if (!badge || !openButton) {
     return
   }
@@ -518,10 +540,13 @@ const applyBadgeLayout = (showOpenButton: boolean, showCheckFontsButton: boolean
   openButton.style.display = showOpenButton ? "inline-flex" : "none"
 
   if (checkFontsButton) {
-    checkFontsButton.style.display = showCheckFontsButton ? "inline-flex" : "none"
+    checkFontsButton.style.display = showCheckFontsButton
+      ? "inline-flex"
+      : "none"
   }
 
-  badge.style.justifyContent = (showOpenButton || showCheckFontsButton) ? "space-between" : "flex-start"
+  badge.style.justifyContent =
+    showOpenButton || showCheckFontsButton ? "space-between" : "flex-start"
 }
 
 const applyBadgeVisibility = (hoverEnabled: boolean) => {
@@ -539,7 +564,10 @@ const applyBadgeVisibility = (hoverEnabled: boolean) => {
   badge.style.pointerEvents = "auto"
 }
 
-const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => {
+const ensureBadge = (
+  showOpenButton: boolean,
+  showCheckFontsButton: boolean
+) => {
   if (!document.body) {
     return
   }
@@ -708,7 +736,10 @@ const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => 
     )
     const nextRequestShowAll = document.createElement("input")
     nextRequestShowAll.type = "checkbox"
-    nextRequestShowAllLabel.append(nextRequestShowAll, document.createTextNode("Show all"))
+    nextRequestShowAllLabel.append(
+      nextRequestShowAll,
+      document.createTextNode("Show all")
+    )
 
     const nextRequestSummary = document.createElement("span")
     nextRequestSummary.textContent = "0/0 requests"
@@ -828,7 +859,10 @@ const ensureBadge = (showOpenButton: boolean, showCheckFontsButton: boolean) => 
     nextRequestHostInput.addEventListener("input", renderRequestListUi)
     nextRequestShowAll.addEventListener("change", renderRequestListUi)
     nextSaveSnapshotButton.addEventListener("click", saveCurrentSnapshot)
-    nextCompareSnapshotButton.addEventListener("click", compareWithSavedSnapshot)
+    nextCompareSnapshotButton.addEventListener(
+      "click",
+      compareWithSavedSnapshot
+    )
 
     nextBadge.addEventListener("mouseenter", () => {
       isRequestListHoverActive = true
@@ -940,7 +974,8 @@ const updateAlertsUi = (totals: Totals) => {
   }
 
   const alerts = buildEnglishAlerts(totals, totals.requestItems, limitBytes)
-  const hasNetworkAlerts = alerts.length > 0 && alerts[0] !== "No obvious network issues detected."
+  const hasNetworkAlerts =
+    alerts.length > 0 && alerts[0] !== "No obvious network issues detected."
 
   if (!hasNetworkAlerts) {
     alertsContainer.style.display = "none"
@@ -966,7 +1001,11 @@ const getSelectedTotals = (): Totals => {
 }
 
 const postStatsToTop = (totals: Totals) => {
-  if (!isIframeContext || displayMode !== "below_iframe" || window.parent === window) {
+  if (
+    !isIframeContext ||
+    displayMode !== "below_iframe" ||
+    window.parent === window
+  ) {
     return
   }
 
@@ -1107,15 +1146,22 @@ const requestEnhancedTotalsOnce = () => {
           : [],
         requests: Math.max(
           0,
-          Number(useTabFallback ? response.tabTrackedRequests : response.trackedRequests) || 0
+          Number(
+            useTabFallback
+              ? response.tabTrackedRequests
+              : response.trackedRequests
+          ) || 0
         ),
         resources: Math.max(
           0,
-          Number(useTabFallback ? response.tabResources : response.resources) || 0
+          Number(useTabFallback ? response.tabResources : response.resources) ||
+            0
         ),
         transferred: Math.max(
           0,
-          Number(useTabFallback ? response.tabTransferred : response.transferred) || 0
+          Number(
+            useTabFallback ? response.tabTransferred : response.transferred
+          ) || 0
         )
       }
       enhancedStatsAvailable = true
@@ -1141,7 +1187,10 @@ const syncEnhancedPolling = () => {
   }
 
   requestEnhancedTotalsOnce()
-  enhancedPollTimerId = window.setInterval(requestEnhancedTotalsOnce, ENHANCED_POLL_MS)
+  enhancedPollTimerId = window.setInterval(
+    requestEnhancedTotalsOnce,
+    ENHANCED_POLL_MS
+  )
 }
 
 const setSettings = (
@@ -1222,7 +1271,9 @@ const observeSettingsChanges = () => {
     let nextRequestListEnabled = requestListEnabled
 
     if (changes[STORAGE_KEYS.DISPLAY_MODE]) {
-      nextDisplayMode = parsers.displayMode(changes[STORAGE_KEYS.DISPLAY_MODE].newValue)
+      nextDisplayMode = parsers.displayMode(
+        changes[STORAGE_KEYS.DISPLAY_MODE].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.MEASUREMENT_METHOD]) {
@@ -1232,17 +1283,22 @@ const observeSettingsChanges = () => {
     }
 
     if (changes[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE]) {
-      nextStandaloneAmsPreviewBadgeEnabled = parsers.standaloneAmsPreviewBadgeEnabled(
-        changes[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE].newValue
-      )
+      nextStandaloneAmsPreviewBadgeEnabled =
+        parsers.standaloneAmsPreviewBadgeEnabled(
+          changes[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE].newValue
+        )
     }
 
     if (changes[STORAGE_KEYS.LIMIT_METRIC]) {
-      nextLimitMetric = parsers.limitMetric(changes[STORAGE_KEYS.LIMIT_METRIC].newValue)
+      nextLimitMetric = parsers.limitMetric(
+        changes[STORAGE_KEYS.LIMIT_METRIC].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.LIMIT_BYTES]) {
-      nextLimitBytes = parsers.limitBytes(changes[STORAGE_KEYS.LIMIT_BYTES].newValue)
+      nextLimitBytes = parsers.limitBytes(
+        changes[STORAGE_KEYS.LIMIT_BYTES].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.ENABLE_SNAPSHOTS]) {
@@ -1264,7 +1320,9 @@ const observeSettingsChanges = () => {
     }
 
     if (changes[STORAGE_KEYS.SHOW_ALERTS]) {
-      nextAlertsEnabled = parsers.showAlerts(changes[STORAGE_KEYS.SHOW_ALERTS].newValue)
+      nextAlertsEnabled = parsers.showAlerts(
+        changes[STORAGE_KEYS.SHOW_ALERTS].newValue
+      )
     }
 
     if (changes[STORAGE_KEYS.SHOW_REQUEST_LIST]) {

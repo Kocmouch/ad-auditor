@@ -46,7 +46,8 @@ export const compareSnapshot = (
   const transferredDelta = currentTotals.transferred - saved.transferred
   const resourcesDelta = currentTotals.resources - saved.resources
   const requestsDelta = currentTotals.requests - saved.requests
-  const formatSigned = (value: number) => (value >= 0 ? `+${value}` : `${value}`)
+  const formatSigned = (value: number) =>
+    value >= 0 ? `+${value}` : `${value}`
 
   return `delta req ${formatSigned(requestsDelta)}, delta tr ${formatSigned(Math.round(transferredDelta / 1000))} kB, delta res ${formatSigned(Math.round(resourcesDelta / 1000))} kB`
 }

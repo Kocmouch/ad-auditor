@@ -1,4 +1,8 @@
-import type { DisplayMode, MeasurementMethod, LimitMetric } from "~lib/types/settings"
+import type {
+  DisplayMode,
+  LimitMetric,
+  MeasurementMethod
+} from "~lib/types/settings"
 
 export const DEFAULTS = {
   DISPLAY_MODE: "below_iframe" as DisplayMode,
@@ -18,7 +22,8 @@ export const DEFAULTS = {
 
 // Backwards compatibility exports
 export const DEFAULT_DISPLAY_MODE = DEFAULTS.DISPLAY_MODE
-export const DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED = DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED
+export const DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED =
+  DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED
 export const DEFAULT_MEASUREMENT_METHOD = DEFAULTS.MEASUREMENT_METHOD
 export const DEFAULT_LIMIT_METRIC = DEFAULTS.LIMIT_METRIC
 export const DEFAULT_LIMIT_BYTES = DEFAULTS.LIMIT_BYTES

@@ -1,4 +1,4 @@
-import type { FontMismatch } from "./font-checker"
+import type { FontMismatch } from "../features/font-checker"
 
 type Theme = {
   background: string
@@ -39,7 +39,11 @@ export const createFontCheckResultsPanel = (
   // Apply saved position immediately
   if (savedPanelX !== 0 || savedPanelY !== 0) {
     container.style.transform = `translate(${savedPanelX}px, ${savedPanelY}px)`
-    console.log('[Ad Auditor] Restoring panel position:', savedPanelX, savedPanelY)
+    console.log(
+      "[Ad Auditor] Restoring panel position:",
+      savedPanelX,
+      savedPanelY
+    )
   }
 
   if (fontMismatches.length === 0) {
@@ -187,7 +191,12 @@ const makeDraggable = (container: HTMLDivElement, header: HTMLDivElement) => {
     isDragging = true
     initialX = e.clientX - currentX
     initialY = e.clientY - currentY
-    console.log('[Ad Auditor] Start drag - currentX:', currentX, 'currentY:', currentY)
+    console.log(
+      "[Ad Auditor] Start drag - currentX:",
+      currentX,
+      "currentY:",
+      currentY
+    )
   })
 
   document.addEventListener("mousemove", (e) => {
@@ -208,7 +217,10 @@ const makeDraggable = (container: HTMLDivElement, header: HTMLDivElement) => {
   })
 }
 
-const populateContent = (content: HTMLDivElement, fontMismatches: FontMismatch[]) => {
+const populateContent = (
+  content: HTMLDivElement,
+  fontMismatches: FontMismatch[]
+) => {
   for (const mismatch of fontMismatches) {
     const row = document.createElement("div")
     row.style.cssText = [

@@ -162,7 +162,6 @@ const checkFontsInIframe = (
   iframe: HTMLIFrameElement,
   callback: (mismatches: FontMismatch[], iframeUrl: string) => void
 ) => {
-  // Send request to iframe to check its fonts
   const messageHandler = (event: MessageEvent) => {
     if (
       event.data?.type === "ad-auditor-check-fonts-response" &&
@@ -178,7 +177,6 @@ const checkFontsInIframe = (
 
   window.addEventListener("message", messageHandler)
 
-  // Timeout after 5 seconds
   setTimeout(() => {
     window.removeEventListener("message", messageHandler)
   }, 5000)
@@ -377,21 +375,16 @@ const insertBadgeAfterIframe = (
     return
   }
 
-  // Insert badge wrapper inside the same container as iframe, right after the iframe
   if (badgeWrapper.parentElement !== parent) {
     parent.appendChild(badgeWrapper)
   } else if (badgeWrapper.previousSibling !== iframe) {
-    // Ensure it's positioned right after iframe
     parent.insertBefore(badgeWrapper, iframe.nextSibling)
   }
 
-  // Override parent container's fixed height to allow it to expand
-  // But preserve width and other styling
   if (parent.style.height && parent.style.height !== "auto") {
     parent.style.height = "auto"
   }
 
-  // Ensure parent maintains its width
   if (!parent.style.width || parent.style.width === "auto") {
     const computedWidth = iframe.getBoundingClientRect().width
     if (computedWidth > 0) {
@@ -404,19 +397,14 @@ const syncBadgeWidth = (
   iframe: HTMLIFrameElement,
   badgeWrapper: HTMLDivElement
 ) => {
-  // Always use 100% width to match parent container
   badgeWrapper.style.width = "100%"
 
-  // Get the actual badge element (first child of wrapper)
   const badge = badgeWrapper.firstElementChild as HTMLDivElement
   if (!badge) return
 
   const frameWidth = Math.round(iframe.getBoundingClientRect().width)
-
-  // Get the open button (should be third child in badge)
   const openButton = badge.children[2] as HTMLButtonElement
 
-  // If width is less than 250px, stack elements vertically
   if (frameWidth < 250) {
     badge.style.flexDirection = "column"
     badge.style.alignItems = "center"
@@ -424,7 +412,6 @@ const syncBadgeWidth = (
     badge.style.gap = "4px"
     badge.style.textAlign = "center"
 
-    // Remove margin-left auto from open button in vertical layout
     if (openButton) {
       openButton.style.marginLeft = "0"
     }
@@ -435,7 +422,6 @@ const syncBadgeWidth = (
     badge.style.gap = "0"
     badge.style.textAlign = "left"
 
-    // Restore margin-left auto for open button in horizontal layout
     if (openButton) {
       openButton.style.marginLeft = "auto"
     }

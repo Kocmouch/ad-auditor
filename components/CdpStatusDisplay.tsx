@@ -1,4 +1,5 @@
 import React from "react"
+
 import type { Theme } from "~lib/ui/theme"
 
 type CdpStatus = "idle" | "loading" | "attached" | "fallback" | "error"
@@ -42,7 +43,8 @@ export const CdpStatusDisplay: React.FC<CdpStatusDisplayProps> = ({
         boxShadow: `inset 4px 4px 8px ${theme.shadowDark}, inset -4px -4px 8px ${theme.shadowLight}`
       }}>
       <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
-        CDP status: <span style={{ color: statusUI.color }}>{statusUI.label}</span>
+        CDP status:{" "}
+        <span style={{ color: statusUI.color }}>{statusUI.label}</span>
       </p>
       {reason && (
         <p style={{ margin: "6px 0 0", fontSize: 12, color: theme.textMuted }}>

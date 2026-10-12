@@ -59,7 +59,9 @@ export function OptionCards<T extends string>({
               alignItems: "flex-start",
               cursor: "pointer",
               textAlign: "left" as const,
-              border: selected ? `1px solid ${theme.accent}` : "1px solid transparent",
+              border: selected
+                ? `1px solid ${theme.accent}`
+                : "1px solid transparent",
               boxShadow: selected
                 ? `inset 6px 6px 12px ${theme.shadowDark}, inset -6px -6px 12px ${theme.shadowLight}`
                 : `6px 6px 12px ${theme.shadowDark}, -6px -6px 12px ${theme.shadowLight}`
@@ -84,7 +86,9 @@ export function OptionCards<T extends string>({
               {option.badge}
             </span>
             <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{option.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {option.label}
+              </span>
               <span style={{ fontSize: 12, color: theme.textMuted }}>
                 {option.description}
               </span>

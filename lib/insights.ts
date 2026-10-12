@@ -83,7 +83,8 @@ export const buildEnglishAlerts = (
 
   const heavyThreshold = Math.max(Math.round(limitBytes * 0.35), 150 * 1024)
   const heavyRequest = items.find(
-    (item) => item.transferred >= heavyThreshold || item.resources >= heavyThreshold
+    (item) =>
+      item.transferred >= heavyThreshold || item.resources >= heavyThreshold
   )
   if (heavyRequest) {
     alerts.push(`Heavy request spotted on ${getDominantLabel(heavyRequest)}.`)

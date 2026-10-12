@@ -1,5 +1,5 @@
-import { STORAGE_KEYS, CURRENT_SETTINGS_VERSION } from "./keys"
 import { DEFAULTS } from "./defaults"
+import { CURRENT_SETTINGS_VERSION, STORAGE_KEYS } from "./keys"
 import { parsers } from "./parsers"
 
 export const getStorageSyncValues = (
@@ -47,7 +47,9 @@ export const runSettingsMigration = async (): Promise<boolean> => {
     STORAGE_KEYS.SETTINGS_VERSION
   ])
   const updates: Record<string, unknown> = {}
-  const storedVersion = parsers.settingsVersion(current[STORAGE_KEYS.SETTINGS_VERSION])
+  const storedVersion = parsers.settingsVersion(
+    current[STORAGE_KEYS.SETTINGS_VERSION]
+  )
 
   if (storedVersion < CURRENT_SETTINGS_VERSION) {
     if (typeof current[STORAGE_KEYS.DISPLAY_MODE] === "undefined") {
@@ -67,7 +69,8 @@ export const runSettingsMigration = async (): Promise<boolean> => {
     }
 
     if (typeof current[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH] === "undefined") {
-      updates[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH] = DEFAULTS.BELOW_IFRAME_FULL_WIDTH
+      updates[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH] =
+        DEFAULTS.BELOW_IFRAME_FULL_WIDTH
     }
 
     if (typeof current[STORAGE_KEYS.ENABLE_SNAPSHOTS] === "undefined") {

@@ -19,12 +19,14 @@ type FontMismatch = {
 let globalFontCheckResultsContainer: HTMLDivElement | null = null
 let currentHighlightedIframe: HTMLIFrameElement | null = null
 
-// Store panel position globally so it persists across re-renders
 let savedPanelX = 0
 let savedPanelY = 0
 
 const ensureGlobalFontCheckContainer = (): HTMLDivElement => {
-  if (globalFontCheckResultsContainer && document.body.contains(globalFontCheckResultsContainer)) {
+  if (
+    globalFontCheckResultsContainer &&
+    document.body.contains(globalFontCheckResultsContainer)
+  ) {
     return globalFontCheckResultsContainer
   }
 
@@ -68,7 +70,11 @@ const removeIframeHighlight = () => {
   }
 }
 
-const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: string, iframe: HTMLIFrameElement) => {
+const renderFontCheckResults = (
+  fontMismatches: FontMismatch[],
+  iframeUrl: string,
+  iframe: HTMLIFrameElement
+) => {
   const container = ensureGlobalFontCheckContainer()
 
   if (fontMismatches.length === 0) {
@@ -76,9 +82,11 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
     container.textContent = ""
     removeIframeHighlight()
 
-    // Clear highlights in iframe
     if (iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: "ad-auditor-clear-font-highlights" }, "*")
+      iframe.contentWindow.postMessage(
+        { type: "ad-auditor-clear-font-highlights" },
+        "*"
+      )
     }
     return
   }
@@ -87,7 +95,6 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
   container.style.display = "block"
   highlightIframe(iframe)
 
-  // Apply saved position
   if (savedPanelX !== 0 || savedPanelY !== 0) {
     container.style.transform = `translate(${savedPanelX}px, ${savedPanelY}px)`
   }
@@ -118,7 +125,8 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
   ].join(";")
 
   const iframeLabel = document.createElement("div")
-  const iframeShortSrc = iframeUrl.length > 40 ? iframeUrl.substring(0, 40) + "..." : iframeUrl
+  const iframeShortSrc =
+    iframeUrl.length > 40 ? iframeUrl.substring(0, 40) + "..." : iframeUrl
   iframeLabel.textContent = `iframe: ${iframeShortSrc}`
   iframeLabel.style.cssText = [
     "font-size:9px",
@@ -196,24 +204,30 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
     container.style.display = "none"
     removeIframeHighlight()
 
-    // Clear highlights in iframe
     if (currentHighlightedIframe && currentHighlightedIframe.contentWindow) {
-      currentHighlightedIframe.contentWindow.postMessage({ type: "ad-auditor-clear-font-highlights" }, "*")
+      currentHighlightedIframe.contentWindow.postMessage(
+        { type: "ad-auditor-clear-font-highlights" },
+        "*"
+      )
     }
   })
 
   minimizeButton.addEventListener("mouseenter", () => {
-    minimizeButton.style.boxShadow = "inset 4px 4px 8px rgba(15, 18, 24, 0.6), inset -4px -4px 8px rgba(255, 255, 255, 0.05)"
+    minimizeButton.style.boxShadow =
+      "inset 4px 4px 8px rgba(15, 18, 24, 0.6), inset -4px -4px 8px rgba(255, 255, 255, 0.05)"
   })
   minimizeButton.addEventListener("mouseleave", () => {
-    minimizeButton.style.boxShadow = "4px 4px 8px rgba(15, 18, 24, 0.6), -4px -4px 8px rgba(255, 255, 255, 0.05)"
+    minimizeButton.style.boxShadow =
+      "4px 4px 8px rgba(15, 18, 24, 0.6), -4px -4px 8px rgba(255, 255, 255, 0.05)"
   })
 
   closeButton.addEventListener("mouseenter", () => {
-    closeButton.style.boxShadow = "inset 4px 4px 8px rgba(15, 18, 24, 0.6), inset -4px -4px 8px rgba(255, 255, 255, 0.05)"
+    closeButton.style.boxShadow =
+      "inset 4px 4px 8px rgba(15, 18, 24, 0.6), inset -4px -4px 8px rgba(255, 255, 255, 0.05)"
   })
   closeButton.addEventListener("mouseleave", () => {
-    closeButton.style.boxShadow = "4px 4px 8px rgba(15, 18, 24, 0.6), -4px -4px 8px rgba(255, 255, 255, 0.05)"
+    closeButton.style.boxShadow =
+      "4px 4px 8px rgba(15, 18, 24, 0.6), -4px -4px 8px rgba(255, 255, 255, 0.05)"
   })
 
   // Make draggable
@@ -236,7 +250,6 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
       currentY = e.clientY - initialY
       container.style.transform = `translate(${currentX}px, ${currentY}px)`
 
-      // Save position globally
       savedPanelX = currentX
       savedPanelY = currentY
     }
@@ -261,7 +274,8 @@ const renderFontCheckResults = (fontMismatches: FontMismatch[], iframeUrl: strin
 
     const elementLabel = document.createElement("div")
     elementLabel.textContent = mismatch.element
-    elementLabel.style.cssText = "color:#7dff6a;font-weight:600;margin-bottom:4px;font-size:10px"
+    elementLabel.style.cssText =
+      "color:#7dff6a;font-weight:600;margin-bottom:4px;font-size:10px"
 
     const fontInfo = document.createElement("div")
     fontInfo.style.cssText = "display:flex;gap:8px;align-items:center"
@@ -313,7 +327,9 @@ window.addEventListener("message", (event) => {
     const { fontMismatches, iframeUrl, iframeIndex } = event.data
 
     // Find the iframe by index
-    const iframes = Array.from(document.querySelectorAll<HTMLIFrameElement>("iframe"))
+    const iframes = Array.from(
+      document.querySelectorAll<HTMLIFrameElement>("iframe")
+    )
     const iframe = iframes[iframeIndex]
 
     if (iframe && fontMismatches) {
@@ -322,7 +338,10 @@ window.addEventListener("message", (event) => {
   }
 
   // From monitor.ts (inside iframe mode)
-  if (event.data?.source === "ad-auditor" && event.data?.type === "font-check-results") {
+  if (
+    event.data?.source === "ad-auditor" &&
+    event.data?.type === "font-check-results"
+  ) {
     const { fontMismatches, iframeUrl } = event.data
 
     // Find the iframe by its content window

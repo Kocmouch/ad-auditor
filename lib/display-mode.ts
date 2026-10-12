@@ -5,7 +5,11 @@
 // - lib/storage/defaults.ts - Default values
 // - lib/storage/parsers.ts - Parser functions
 
-export type { DisplayMode, MeasurementMethod, LimitMetric } from "~lib/types/settings"
+export type {
+  DisplayMode,
+  MeasurementMethod,
+  LimitMetric
+} from "~lib/types/settings"
 
 export {
   STORAGE_KEYS,

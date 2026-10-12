@@ -86,7 +86,9 @@ export const filterAndSortRequestItems = (
   })
 
   const sortedItems = sortRequestItems(filteredItems, filters.sort)
-  const visibleItems = filters.showAll ? sortedItems : sortedItems.slice(0, limit)
+  const visibleItems = filters.showAll
+    ? sortedItems
+    : sortedItems.slice(0, limit)
 
   return {
     filteredCount: filteredItems.length,

@@ -46,7 +46,9 @@ export const ToggleCard: React.FC<ToggleCardProps> = ({
     type="button">
     <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <span style={{ fontSize: 13, fontWeight: 600 }}>{title}</span>
-      <span style={{ fontSize: 12, color: theme.textMuted }}>{description}</span>
+      <span style={{ fontSize: 12, color: theme.textMuted }}>
+        {description}
+      </span>
     </span>
     <span
       style={{

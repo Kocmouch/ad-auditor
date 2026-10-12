@@ -1,4 +1,4 @@
-import type { TabSession, RequestMetric } from "./types"
+import type { RequestMetric, TabSession } from "./types"
 
 export const sessionsByTabId = new Map<number, TabSession>()
 

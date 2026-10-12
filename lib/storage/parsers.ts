@@ -1,4 +1,9 @@
-import type { DisplayMode, MeasurementMethod, LimitMetric } from "~lib/types/settings"
+import type {
+  DisplayMode,
+  LimitMetric,
+  MeasurementMethod
+} from "~lib/types/settings"
+
 import { DEFAULTS } from "./defaults"
 
 export const parsers = {
@@ -107,7 +112,8 @@ export const parsers = {
 
 // Backwards compatibility exports
 export const parseDisplayMode = parsers.displayMode
-export const parseStandaloneAmsPreviewBadgeEnabled = parsers.standaloneAmsPreviewBadgeEnabled
+export const parseStandaloneAmsPreviewBadgeEnabled =
+  parsers.standaloneAmsPreviewBadgeEnabled
 export const parseMeasurementMethod = parsers.measurementMethod
 export const parseLimitMetric = parsers.limitMetric
 export const parseLimitBytes = parsers.limitBytes

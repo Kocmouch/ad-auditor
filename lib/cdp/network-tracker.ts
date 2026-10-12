@@ -1,8 +1,16 @@
-import type { DebuggeeWithSession, RequestMetric, TabSession } from "./types"
-import { asNumber } from "~lib/utils/formatters"
-import { getDocumentKey, getUrlHost, normalizeDocumentUrl } from "~lib/utils/formatters"
+import {
+  asNumber,
+  getDocumentKey,
+  getUrlHost,
+  normalizeDocumentUrl
+} from "~lib/utils/formatters"
 
-export const getRequestKey = (session: TabSession, requestId: string): string => {
+import type { DebuggeeWithSession, RequestMetric, TabSession } from "./types"
+
+export const getRequestKey = (
+  session: TabSession,
+  requestId: string
+): string => {
   const mapped = session.requestKeyByRequestId.get(requestId)
   if (mapped) {
     return mapped
@@ -60,7 +68,8 @@ export const handleNetworkRequestWillBeSent = (
   source: chrome.debugger.Debuggee,
   params?: Record<string, unknown>
 ) => {
-  const requestId = typeof params?.requestId === "string" ? params.requestId : ""
+  const requestId =
+    typeof params?.requestId === "string" ? params.requestId : ""
   if (!requestId) {
     return
   }
@@ -69,7 +78,9 @@ export const handleNetworkRequestWillBeSent = (
   const hasRedirectResponse = Boolean(params?.redirectResponse)
   const currentSequence =
     session.requestSequenceByRequestId.get(scopedRequestId) ?? 0
-  const nextSequence = hasRedirectResponse ? currentSequence + 1 : currentSequence
+  const nextSequence = hasRedirectResponse
+    ? currentSequence + 1
+    : currentSequence
   session.requestSequenceByRequestId.set(scopedRequestId, nextSequence)
 
   const requestKey = `${scopedRequestId}#${nextSequence}`
@@ -91,8 +102,7 @@ export const handleNetworkRequestWillBeSent = (
   const loaderId = typeof params?.loaderId === "string" ? params.loaderId : ""
   const normalizedRequestUrl = normalizeDocumentUrl(requestUrlValue)
   const effectiveDocumentUrl =
-    documentUrl ||
-    (requestType === "Document" ? normalizedRequestUrl : "")
+    documentUrl || (requestType === "Document" ? normalizedRequestUrl : "")
 
   session.requests.set(requestKey, {
     completed: false,
@@ -115,12 +125,16 @@ export const handleNetworkDataReceived = (
   source: chrome.debugger.Debuggee,
   params?: Record<string, unknown>
 ) => {
-  const requestId = typeof params?.requestId === "string" ? params.requestId : ""
+  const requestId =
+    typeof params?.requestId === "string" ? params.requestId : ""
   if (!requestId) {
     return
   }
 
-  const requestKey = getRequestKey(session, getScopedRequestId(source, requestId))
+  const requestKey = getRequestKey(
+    session,
+    getScopedRequestId(source, requestId)
+  )
   const metric = getOrCreateRequestMetric(session, requestKey)
   metric.decodedBytes += asNumber(params?.dataLength)
   metric.encodedBytesFromChunks += asNumber(params?.encodedDataLength)
@@ -131,12 +145,16 @@ export const handleNetworkLoadingFinished = (
   source: chrome.debugger.Debuggee,
   params?: Record<string, unknown>
 ) => {
-  const requestId = typeof params?.requestId === "string" ? params.requestId : ""
+  const requestId =
+    typeof params?.requestId === "string" ? params.requestId : ""
   if (!requestId) {
     return
   }
 
-  const requestKey = getRequestKey(session, getScopedRequestId(source, requestId))
+  const requestKey = getRequestKey(
+    session,
+    getScopedRequestId(source, requestId)
+  )
   const metric = getOrCreateRequestMetric(session, requestKey)
   metric.completed = true
   metric.finalEncodedBytes = asNumber(params?.encodedDataLength)
@@ -147,12 +165,16 @@ export const handleNetworkLoadingFailed = (
   source: chrome.debugger.Debuggee,
   params?: Record<string, unknown>
 ) => {
-  const requestId = typeof params?.requestId === "string" ? params.requestId : ""
+  const requestId =
+    typeof params?.requestId === "string" ? params.requestId : ""
   if (!requestId) {
     return
   }
 
-  const requestKey = getRequestKey(session, getScopedRequestId(source, requestId))
+  const requestKey = getRequestKey(
+    session,
+    getScopedRequestId(source, requestId)
+  )
   const metric = session.requests.get(requestKey)
   if (metric) {
     metric.completed = true
