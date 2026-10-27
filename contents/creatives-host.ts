@@ -1,6 +1,15 @@
 import type { PlasmoCSConfig } from "plasmo"
 
+import {
+  clearBorderHighlights,
+  type BorderIssue
+} from "~lib/features/border-checker"
 import { clearFontHighlights } from "~lib/features/font-checker"
+import {
+  clearOptOutHighlights,
+  type OptOutIssue
+} from "~lib/features/optout-checker"
+import { createAccessibilityResultsPanel } from "~lib/ui/accessibility-results-panel"
 
 export const config: PlasmoCSConfig = {
   matches: [
@@ -17,6 +26,7 @@ type FontMismatch = {
 }
 
 let globalFontCheckResultsContainer: HTMLDivElement | null = null
+let globalAccessibilityResultsContainer: HTMLDivElement | null = null
 let currentHighlightedIframe: HTMLIFrameElement | null = null
 
 let savedPanelX = 0
@@ -302,6 +312,62 @@ const renderFontCheckResults = (
   container.append(header, content)
 }
 
+const renderAccessibilityCheckResults = (
+  optOutIssues: OptOutIssue[],
+  borderIssues: BorderIssue[],
+  iframeUrl: string,
+  iframe: HTMLIFrameElement
+) => {
+  // Remove old panel if exists
+  if (
+    globalAccessibilityResultsContainer &&
+    document.body.contains(globalAccessibilityResultsContainer)
+  ) {
+    globalAccessibilityResultsContainer.remove()
+  }
+
+  highlightIframe(iframe)
+
+  const theme = {
+    background: "#2a2f3a",
+    surface: "#313745",
+    text: "#f3f5f9",
+    textMuted: "#b5bdcd",
+    shadowLight: "rgba(255, 255, 255, 0.05)",
+    shadowDark: "rgba(15, 18, 24, 0.6)",
+    accent: "#7dff6a"
+  }
+
+  globalAccessibilityResultsContainer = createAccessibilityResultsPanel(
+    optOutIssues,
+    borderIssues,
+    theme
+  )
+
+  // Add close button handler
+  const closeButton = globalAccessibilityResultsContainer.querySelector(
+    "button"
+  ) as HTMLButtonElement
+  if (closeButton) {
+    closeButton.addEventListener("click", () => {
+      if (globalAccessibilityResultsContainer) {
+        globalAccessibilityResultsContainer.remove()
+      }
+      removeIframeHighlight()
+
+      // Clear highlights in iframe
+      if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage(
+          { type: "ad-auditor-clear-accessibility-highlights" },
+          "*"
+        )
+      }
+    })
+  }
+
+  document.body.appendChild(globalAccessibilityResultsContainer)
+}
+
 const findIframeBySourceWindow = (
   sourceWindow: MessageEventSource | null
 ): HTMLIFrameElement | null => {
@@ -349,6 +415,43 @@ window.addEventListener("message", (event) => {
 
     if (iframe && fontMismatches) {
       renderFontCheckResults(fontMismatches, iframeUrl, iframe)
+    }
+  }
+
+  // Accessibility check results from host-overlay.ts (below iframe mode)
+  if (event.data?.type === "ad-auditor-check-accessibility-response") {
+    const { optOutIssues, borderIssues, iframeUrl } = event.data
+
+    // Find the iframe by its content window
+    const iframe = findIframeBySourceWindow(event.source)
+
+    if (iframe) {
+      renderAccessibilityCheckResults(
+        optOutIssues,
+        borderIssues,
+        iframeUrl,
+        iframe
+      )
+    }
+  }
+
+  // Accessibility check results from monitor.ts (inside iframe mode)
+  if (
+    event.data?.source === "ad-auditor" &&
+    event.data?.type === "accessibility-check-results"
+  ) {
+    const { optOutIssues, borderIssues, iframeUrl } = event.data
+
+    // Find the iframe by its content window
+    const iframe = findIframeBySourceWindow(event.source)
+
+    if (iframe) {
+      renderAccessibilityCheckResults(
+        optOutIssues,
+        borderIssues,
+        iframeUrl,
+        iframe
+      )
     }
   }
 })

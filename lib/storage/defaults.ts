@@ -1,18 +1,15 @@
 import type {
-  DisplayMode,
   LimitMetric,
   MeasurementMethod
 } from "~lib/types/settings"
 
 export const DEFAULTS = {
-  DISPLAY_MODE: "below_iframe" as DisplayMode,
-  STANDALONE_AMS_PREVIEW_BADGE_ENABLED: false as boolean,
+  STANDALONE_AMS_PREVIEW_BADGE_ENABLED: true as boolean,
   MEASUREMENT_METHOD: "enhanced_cdp" as MeasurementMethod,
   LIMIT_METRIC: "resources" as LimitMetric,
   LIMIT_BYTES: Math.round(2.5 * 1024 * 1024) as number,
   DISABLE_CACHE: true as boolean,
   SHOW_CDP_STATUS: false as boolean,
-  BELOW_IFRAME_FULL_WIDTH: false as boolean,
   ENABLE_SNAPSHOTS: false as boolean,
   SHOW_WATERFALL: false as boolean,
   FOCUS_OFFENDERS: false as boolean,
@@ -21,7 +18,6 @@ export const DEFAULTS = {
 }
 
 // Backwards compatibility exports
-export const DEFAULT_DISPLAY_MODE = DEFAULTS.DISPLAY_MODE
 export const DEFAULT_STANDALONE_AMS_PREVIEW_BADGE_ENABLED =
   DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED
 export const DEFAULT_MEASUREMENT_METHOD = DEFAULTS.MEASUREMENT_METHOD
@@ -29,7 +25,6 @@ export const DEFAULT_LIMIT_METRIC = DEFAULTS.LIMIT_METRIC
 export const DEFAULT_LIMIT_BYTES = DEFAULTS.LIMIT_BYTES
 export const DEFAULT_DISABLE_CACHE = DEFAULTS.DISABLE_CACHE
 export const DEFAULT_SHOW_CDP_STATUS = DEFAULTS.SHOW_CDP_STATUS
-export const DEFAULT_BELOW_IFRAME_FULL_WIDTH = DEFAULTS.BELOW_IFRAME_FULL_WIDTH
 export const DEFAULT_ENABLE_SNAPSHOTS = DEFAULTS.ENABLE_SNAPSHOTS
 export const DEFAULT_SHOW_WATERFALL = DEFAULTS.SHOW_WATERFALL
 export const DEFAULT_FOCUS_OFFENDERS = DEFAULTS.FOCUS_OFFENDERS

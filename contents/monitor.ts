@@ -1,10 +1,20 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 import {
+  checkBorderElements,
+  clearBorderHighlights,
+  type BorderIssue
+} from "~lib/features/border-checker"
+import {
   checkFontsInDocument,
   clearFontHighlights,
   type FontMismatch
 } from "~lib/features/font-checker"
+import {
+  checkOptOutElements,
+  clearOptOutHighlights,
+  type OptOutIssue
+} from "~lib/features/optout-checker"
 import {
   compareSnapshot,
   getSnapshotInfo,
@@ -31,7 +41,9 @@ import type {
   LimitMetric,
   MeasurementMethod
 } from "~lib/types/settings"
+import { createAccessibilityResultsPanel } from "~lib/ui/accessibility-results-panel"
 import { createFontCheckResultsPanel } from "~lib/ui/font-results-panel"
+import { attachTooltip } from "~lib/ui/tooltip"
 import { getUsageColor } from "~lib/usage-color"
 import { formatBytes, shortUrl } from "~lib/utils/formatters"
 
@@ -62,7 +74,6 @@ const isIframeContext = (() => {
   }
 })()
 
-let displayMode: DisplayMode = DEFAULTS.DISPLAY_MODE
 let measurementMethod: MeasurementMethod = DEFAULTS.MEASUREMENT_METHOD
 let standaloneAmsPreviewBadgeEnabled =
   DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED
@@ -79,6 +90,7 @@ let requestListContainer: HTMLDivElement | null = null
 let requestListElement: HTMLUListElement | null = null
 let alertsContainer: HTMLDivElement | null = null
 let globalFontCheckResultsContainer: HTMLDivElement | null = null
+let globalAccessibilityResultsContainer: HTMLDivElement | null = null
 let waterfallContainer: HTMLDivElement | null = null
 let snapshotBar: HTMLDivElement | null = null
 let snapshotInfo: HTMLSpanElement | null = null
@@ -95,7 +107,8 @@ let transferredValueSpan: HTMLSpanElement | null = null
 let resourcesValueSpan: HTMLSpanElement | null = null
 let openButton: HTMLButtonElement | null = null
 let checkFontsButton: HTMLButtonElement | null = null
-let isHoverActive = false
+let checkAccessibilityButton: HTMLButtonElement | null = null
+let buttonsContainer: HTMLDivElement | null = null
 let isRequestListHoverActive = false
 let lastStatsPostAt = 0
 let latestRequestItems: RequestItem[] = []
@@ -529,45 +542,102 @@ const renderFontCheckResultsLocally = () => {
   globalFontCheckResultsContainer = newPanel
 }
 
+const handleCheckAccessibility = () => {
+  const optOutIssues = checkOptOutElements()
+  const borderIssues = checkBorderElements()
+
+  // If inside iframe, send results to parent (creatives-host.ts)
+  if (isIframeContext && window.parent !== window) {
+    window.parent.postMessage(
+      {
+        source: "ad-auditor",
+        type: "accessibility-check-results",
+        optOutIssues: optOutIssues,
+        borderIssues: borderIssues,
+        iframeUrl: window.location.href
+      },
+      "*"
+    )
+  } else {
+    // Standalone AMS - render locally
+    renderAccessibilityResultsLocally(optOutIssues, borderIssues)
+  }
+}
+
+const renderAccessibilityResultsLocally = (
+  optOutIssues: OptOutIssue[],
+  borderIssues: BorderIssue[]
+) => {
+  if (
+    !globalAccessibilityResultsContainer ||
+    !document.body.contains(globalAccessibilityResultsContainer)
+  ) {
+    const theme = {
+      background: "#2a2f3a",
+      surface: "#313745",
+      text: "#f3f5f9",
+      textMuted: "#b5bdcd",
+      shadowLight: "rgba(255, 255, 255, 0.05)",
+      shadowDark: "rgba(15, 18, 24, 0.6)",
+      accent: "#7dff6a"
+    }
+    globalAccessibilityResultsContainer = createAccessibilityResultsPanel(
+      optOutIssues,
+      borderIssues,
+      theme
+    )
+    document.body.appendChild(globalAccessibilityResultsContainer)
+    return
+  }
+
+  const theme = {
+    background: "#2a2f3a",
+    surface: "#313745",
+    text: "#f3f5f9",
+    textMuted: "#b5bdcd",
+    shadowLight: "rgba(255, 255, 255, 0.05)",
+    shadowDark: "rgba(15, 18, 24, 0.6)",
+    accent: "#7dff6a"
+  }
+
+  const newPanel = createAccessibilityResultsPanel(
+    optOutIssues,
+    borderIssues,
+    theme
+  )
+  globalAccessibilityResultsContainer.replaceWith(newPanel)
+  globalAccessibilityResultsContainer = newPanel
+}
+
 const applyBadgeLayout = (
   showOpenButton: boolean,
-  showCheckFontsButton: boolean
+  showCheckFontsButton: boolean,
+  showCheckAccessibilityButton: boolean
 ) => {
-  if (!badge || !openButton) {
+  if (!badge || !openButton || !buttonsContainer) {
     return
   }
 
   openButton.style.display = showOpenButton ? "inline-flex" : "none"
 
-  if (checkFontsButton) {
-    checkFontsButton.style.display = showCheckFontsButton
-      ? "inline-flex"
-      : "none"
-  }
+  // Show buttons container if either button should be shown
+  const showButtonsContainer = showCheckFontsButton || showCheckAccessibilityButton
+  buttonsContainer.style.display = showButtonsContainer ? "flex" : "none"
 
   badge.style.justifyContent =
-    showOpenButton || showCheckFontsButton ? "space-between" : "flex-start"
-}
-
-const applyBadgeVisibility = (hoverEnabled: boolean) => {
-  if (!badge) {
-    return
-  }
-
-  if (hoverEnabled && displayMode === "inside_hover") {
-    badge.style.opacity = isHoverActive ? "1" : "0"
-    badge.style.pointerEvents = isHoverActive ? "auto" : "none"
-    return
-  }
-
-  badge.style.opacity = "1"
-  badge.style.pointerEvents = "auto"
+    showOpenButton || showButtonsContainer ? "space-between" : "flex-start"
 }
 
 const ensureBadge = (
   showOpenButton: boolean,
-  showCheckFontsButton: boolean
+  showCheckFontsButton: boolean,
+  showCheckAccessibilityButton: boolean
 ) => {
+  // Don't show badge in iframe - let host-overlay handle it
+  if (isIframeContext) {
+    return
+  }
+
   if (!document.body) {
     return
   }
@@ -587,6 +657,8 @@ const ensureBadge = (
     !resourcesValueSpan ||
     !openButton ||
     !checkFontsButton ||
+    !checkAccessibilityButton ||
+    !buttonsContainer ||
     !badge.isConnected
   ) {
     const nextBadge = document.createElement("div")
@@ -779,33 +851,7 @@ const ensureBadge = (
     const nextOpenButton = document.createElement("button")
     nextOpenButton.type = "button"
     nextOpenButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`
-    nextOpenButton.title = "Open in new tab"
     nextOpenButton.setAttribute(
-      "style",
-      [
-        "border: 1px solid #7dff6a",
-        "background: transparent",
-        "color: #7dff6a",
-        "border-radius: 4px",
-        "padding: 4px",
-        "font-size: 11px",
-        "line-height: 0",
-        "cursor: pointer",
-        "margin-left: auto",
-        "position: relative",
-        "z-index: 1",
-        "display: flex",
-        "align-items: center",
-        "justify-content: center"
-      ].join(";")
-    )
-    nextOpenButton.addEventListener("click", openInNewTab)
-
-    const nextCheckFontsButton = document.createElement("button")
-    nextCheckFontsButton.type = "button"
-    nextCheckFontsButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>`
-    nextCheckFontsButton.title = "Check fonts"
-    nextCheckFontsButton.setAttribute(
       "style",
       [
         "border: 1px solid #7dff6a",
@@ -824,7 +870,63 @@ const ensureBadge = (
         "justify-content: center"
       ].join(";")
     )
+    nextOpenButton.addEventListener("click", openInNewTab)
+    attachTooltip(nextOpenButton, "Open creative in new tab")
+
+    const nextCheckFontsButton = document.createElement("button")
+    nextCheckFontsButton.type = "button"
+    nextCheckFontsButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>`
+    nextCheckFontsButton.setAttribute(
+      "style",
+      [
+        "border: 1px solid #7dff6a",
+        "background: transparent",
+        "color: #7dff6a",
+        "border-radius: 4px",
+        "padding: 4px",
+        "font-size: 11px",
+        "line-height: 0",
+        "cursor: pointer",
+        "position: relative",
+        "z-index: 1",
+        "display: flex",
+        "align-items: center",
+        "justify-content: center"
+      ].join(";")
+    )
     nextCheckFontsButton.addEventListener("click", handleCheckFonts)
+    attachTooltip(nextCheckFontsButton, "Check font declarations vs rendered fonts")
+
+    const nextCheckAccessibilityButton = document.createElement("button")
+    nextCheckAccessibilityButton.type = "button"
+    nextCheckAccessibilityButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 10 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="2" x2="9" y2="2"></line><line x1="1" y1="6" x2="9" y2="6"></line></svg>`
+    nextCheckAccessibilityButton.setAttribute(
+      "style",
+      [
+        "border: 1px solid #7dff6a",
+        "background: transparent",
+        "color: #7dff6a",
+        "border-radius: 4px",
+        "padding: 4px",
+        "font-size: 11px",
+        "line-height: 0",
+        "cursor: pointer",
+        "margin-left: 4px",
+        "position: relative",
+        "z-index: 1",
+        "display: flex",
+        "align-items: center",
+        "justify-content: center"
+      ].join(";")
+    )
+    nextCheckAccessibilityButton.addEventListener(
+      "click",
+      handleCheckAccessibility
+    )
+    attachTooltip(
+      nextCheckAccessibilityButton,
+      "Check opt-out visibility & banner border"
+    )
 
     const nextAlertsContainer = document.createElement("div")
     nextAlertsContainer.setAttribute(
@@ -845,10 +947,21 @@ const ensureBadge = (
       ].join(";")
     )
 
+    const nextButtonsContainer = document.createElement("div")
+    nextButtonsContainer.setAttribute(
+      "style",
+      [
+        "display: flex",
+        "gap: 4px",
+        "margin-left: auto"
+      ].join(";")
+    )
+    nextButtonsContainer.append(nextCheckFontsButton, nextCheckAccessibilityButton)
+
     nextBadge.append(
       statsContainer,
+      nextButtonsContainer,
       nextOpenButton,
-      nextCheckFontsButton,
       nextRequestListContainer,
       nextAlertsContainer
     )
@@ -902,9 +1015,15 @@ const ensureBadge = (
     resourcesValueSpan = nextResourcesValue
     openButton = nextOpenButton
     checkFontsButton = nextCheckFontsButton
+    checkAccessibilityButton = nextCheckAccessibilityButton
+    buttonsContainer = nextButtonsContainer
   }
 
-  applyBadgeLayout(showOpenButton, showCheckFontsButton)
+  applyBadgeLayout(
+    showOpenButton,
+    showCheckFontsButton,
+    showCheckAccessibilityButton
+  )
 }
 
 const removeBadge = () => {
@@ -932,6 +1051,8 @@ const removeBadge = () => {
   resourcesValueSpan = null
   openButton = null
   checkFontsButton = null
+  checkAccessibilityButton = null
+  buttonsContainer = null
   isRequestListHoverActive = false
   latestRequestItems = []
   fontMismatches = []
@@ -1001,11 +1122,7 @@ const getSelectedTotals = (): Totals => {
 }
 
 const postStatsToTop = (totals: Totals) => {
-  if (
-    !isIframeContext ||
-    displayMode !== "below_iframe" ||
-    window.parent === window
-  ) {
+  if (!isIframeContext || window.parent === window) {
     return
   }
 
@@ -1047,8 +1164,8 @@ const render = () => {
       return
     }
 
-    // Standalone AMS page: no "Open" button (already on the page), only "Check Fonts"
-    ensureBadge(false, true)
+    // Standalone AMS page: no "Open" button (already on the page), only "Check Fonts" and "Check Accessibility"
+    ensureBadge(false, true, true)
     if (transferredValueSpan) {
       transferredValueSpan.textContent = transferredText
     }
@@ -1065,14 +1182,15 @@ const render = () => {
     return
   }
 
-  if (displayMode === "below_iframe") {
+  // If in iframe (below_iframe mode), send stats to parent and don't show badge
+  if (isIframeContext) {
     removeBadge()
     postStatsToTop(totals)
     return
   }
 
-  // Inside iframe: show both "Open" and "Check Fonts" buttons
-  ensureBadge(true, true)
+  // Standalone AMS: show badge with all buttons
+  ensureBadge(true, true, true)
   if (transferredValueSpan) {
     transferredValueSpan.textContent = transferredText
   }
@@ -1194,7 +1312,6 @@ const syncEnhancedPolling = () => {
 }
 
 const setSettings = (
-  nextDisplayMode: DisplayMode,
   nextMeasurementMethod: MeasurementMethod,
   nextStandaloneAmsPreviewBadgeEnabled: boolean,
   nextLimitMetric: LimitMetric,
@@ -1205,7 +1322,6 @@ const setSettings = (
   nextAlertsEnabled: boolean,
   nextRequestListEnabled: boolean
 ) => {
-  displayMode = nextDisplayMode
   measurementMethod = nextMeasurementMethod
   standaloneAmsPreviewBadgeEnabled = nextStandaloneAmsPreviewBadgeEnabled
   limitMetric = nextLimitMetric
@@ -1223,7 +1339,6 @@ const setSettings = (
 const loadSettings = () => {
   chrome.storage.sync.get(
     [
-      STORAGE_KEYS.DISPLAY_MODE,
       STORAGE_KEYS.MEASUREMENT_METHOD,
       STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE,
       STORAGE_KEYS.ENABLE_SNAPSHOTS,
@@ -1236,7 +1351,6 @@ const loadSettings = () => {
     ],
     (result) => {
       setSettings(
-        parsers.displayMode(result[STORAGE_KEYS.DISPLAY_MODE]),
         parsers.measurementMethod(result[STORAGE_KEYS.MEASUREMENT_METHOD]),
         parsers.standaloneAmsPreviewBadgeEnabled(
           result[STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE]
@@ -1259,7 +1373,6 @@ const observeSettingsChanges = () => {
       return
     }
 
-    let nextDisplayMode = displayMode
     let nextMeasurementMethod = measurementMethod
     let nextStandaloneAmsPreviewBadgeEnabled = standaloneAmsPreviewBadgeEnabled
     let nextLimitMetric = limitMetric
@@ -1269,12 +1382,6 @@ const observeSettingsChanges = () => {
     let nextFocusOffendersEnabled = focusOffendersEnabled
     let nextAlertsEnabled = alertsEnabled
     let nextRequestListEnabled = requestListEnabled
-
-    if (changes[STORAGE_KEYS.DISPLAY_MODE]) {
-      nextDisplayMode = parsers.displayMode(
-        changes[STORAGE_KEYS.DISPLAY_MODE].newValue
-      )
-    }
 
     if (changes[STORAGE_KEYS.MEASUREMENT_METHOD]) {
       nextMeasurementMethod = parsers.measurementMethod(
@@ -1332,7 +1439,6 @@ const observeSettingsChanges = () => {
     }
 
     setSettings(
-      nextDisplayMode,
       nextMeasurementMethod,
       nextStandaloneAmsPreviewBadgeEnabled,
       nextLimitMetric,
@@ -1343,18 +1449,6 @@ const observeSettingsChanges = () => {
       nextAlertsEnabled,
       nextRequestListEnabled
     )
-  })
-}
-
-const bindHoverMode = () => {
-  document.documentElement.addEventListener("mouseenter", () => {
-    isHoverActive = true
-    applyBadgeVisibility(true)
-  })
-
-  document.documentElement.addEventListener("mouseleave", () => {
-    isHoverActive = false
-    applyBadgeVisibility(true)
   })
 }
 
@@ -1397,6 +1491,11 @@ const init = () => {
           clearFontHighlights()
         }
 
+        if (event.data?.type === "ad-auditor-clear-accessibility-highlights") {
+          clearOptOutHighlights()
+          clearBorderHighlights()
+        }
+
         // Check fonts request from host-overlay (below_iframe mode)
         if (event.data?.type === "ad-auditor-check-fonts-request") {
           const mismatches = checkFontsInDocument()
@@ -1406,6 +1505,23 @@ const init = () => {
             {
               type: "ad-auditor-check-fonts-response",
               fontMismatches: mismatches,
+              iframeUrl: window.location.href
+            },
+            "*"
+          )
+        }
+
+        // Check accessibility request from host-overlay (below_iframe mode)
+        if (event.data?.type === "ad-auditor-check-accessibility-request") {
+          const optOutIssues = checkOptOutElements()
+          const borderIssues = checkBorderElements()
+
+          // Send response back to host-overlay
+          window.parent.postMessage(
+            {
+              type: "ad-auditor-check-accessibility-response",
+              optOutIssues: optOutIssues,
+              borderIssues: borderIssues,
               iframeUrl: window.location.href
             },
             "*"

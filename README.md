@@ -39,6 +39,16 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
   - opens automatically on first install
   - available anytime from popup (`Open setup guide`)
   - includes interactive onboarding checklist and quick actions
+- **Font checking** (button with "T" icon):
+  - Detects font mismatches (declared vs rendered)
+  - Highlights elements with colorful gradient border
+  - Shows results panel with detailed information
+- **Accessibility checking** (button with 3-line icon):
+  - **Opt-out detection**: Finds `.optout`/`#optout` elements in iframes and AMS
+  - **Contrast validation**: Checks WCAG AA compliance (4.5:1 minimum) for opt-out elements
+  - **Border validation**: Detects missing or invisible borders on banner containers
+  - Highlights issues with colored outlines (red for critical, yellow for warnings)
+  - Shows unified results panel with detailed breakdown
 
 ## Defaults and Settings Migration
 

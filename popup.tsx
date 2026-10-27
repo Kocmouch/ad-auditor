@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 
-import type { DisplayMode, LimitMetric, MeasurementMethod } from "~lib/types/settings"
+import type { LimitMetric, MeasurementMethod } from "~lib/types/settings"
 import { STORAGE_KEYS } from "~lib/storage/keys"
 import { DEFAULTS } from "~lib/storage/defaults"
 import { parsers } from "~lib/storage/parsers"
@@ -8,32 +8,6 @@ import { ToggleCard } from "~components/ToggleCard"
 import { OptionCards } from "~components/OptionCards"
 import { CdpStatusDisplay } from "~components/CdpStatusDisplay"
 import { getTheme } from "~lib/ui/theme"
-
-const DISPLAY_OPTIONS: Array<{
-  value: DisplayMode
-  label: string
-  description: string
-  badge: string
-}> = [
-  {
-    value: "inside_always",
-    label: "Inside iframe (always visible)",
-    description: "Overlay stays visible at the bottom of each ad iframe.",
-    badge: "01"
-  },
-  {
-    value: "inside_hover",
-    label: "Inside iframe (show on hover)",
-    description: "Overlay appears only when the cursor is over the iframe.",
-    badge: "02"
-  },
-  {
-    value: "below_iframe",
-    label: "Below iframe",
-    description: "Overlay is rendered under the iframe on the host page.",
-    badge: "03"
-  }
-]
 
 const MEASUREMENT_OPTIONS: Array<{
   value: MeasurementMethod
@@ -108,7 +82,6 @@ const LIMIT_PRESETS: LimitPreset[] = [
 ]
 
 function IndexPopup() {
-  const [mode, setMode] = useState<DisplayMode>(DEFAULTS.DISPLAY_MODE)
   const [isDarkTheme, setIsDarkTheme] = useState(false)
   const [measurementMethod, setMeasurementMethod] = useState<MeasurementMethod>(
     DEFAULTS.MEASUREMENT_METHOD
@@ -134,9 +107,6 @@ function IndexPopup() {
   )
   const [cdpStatus, setCdpStatus] = useState<CdpStatus>("idle")
   const [cdpStatusReason, setCdpStatusReason] = useState("")
-  const [belowIframeFullWidth, setBelowIframeFullWidth] = useState<boolean>(
-    DEFAULTS.BELOW_IFRAME_FULL_WIDTH
-  )
   const [limitMetric, setLimitMetric] = useState<LimitMetric>(DEFAULTS.LIMIT_METRIC)
   const [limitBytes, setLimitBytes] = useState<number>(DEFAULTS.LIMIT_BYTES)
   const [limitMbInput, setLimitMbInput] = useState<string>(
@@ -146,12 +116,10 @@ function IndexPopup() {
   useEffect(() => {
     chrome.storage.sync.get(
       [
-        STORAGE_KEYS.DISPLAY_MODE,
         STORAGE_KEYS.MEASUREMENT_METHOD,
         STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE,
         STORAGE_KEYS.DISABLE_CACHE,
         STORAGE_KEYS.SHOW_CDP_STATUS,
-        STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH,
         STORAGE_KEYS.ENABLE_SNAPSHOTS,
         STORAGE_KEYS.SHOW_WATERFALL,
         STORAGE_KEYS.FOCUS_OFFENDERS,
@@ -161,7 +129,6 @@ function IndexPopup() {
         STORAGE_KEYS.LIMIT_BYTES
       ],
       (result) => {
-        setMode(parsers.displayMode(result[STORAGE_KEYS.DISPLAY_MODE]))
         setMeasurementMethod(parsers.measurementMethod(result[STORAGE_KEYS.MEASUREMENT_METHOD]))
         setStandaloneAmsPreviewBadgeEnabled(
           parsers.standaloneAmsPreviewBadgeEnabled(
@@ -170,9 +137,6 @@ function IndexPopup() {
         )
         setDisableCache(parsers.disableCache(result[STORAGE_KEYS.DISABLE_CACHE]))
         setShowCdpStatus(parsers.showCdpStatus(result[STORAGE_KEYS.SHOW_CDP_STATUS]))
-        setBelowIframeFullWidth(
-          parsers.belowIframeFullWidth(result[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH])
-        )
         setSnapshotsEnabled(parsers.enableSnapshots(result[STORAGE_KEYS.ENABLE_SNAPSHOTS]))
         setWaterfallEnabled(parsers.showWaterfall(result[STORAGE_KEYS.SHOW_WATERFALL]))
         setFocusOffendersEnabled(parsers.focusOffenders(result[STORAGE_KEYS.FOCUS_OFFENDERS]))
@@ -256,12 +220,6 @@ function IndexPopup() {
     const nextValue = !showCdpStatus
     setShowCdpStatus(nextValue)
     chrome.storage.sync.set({ [STORAGE_KEYS.SHOW_CDP_STATUS]: nextValue })
-  }
-
-  const onToggleBelowIframeFullWidth = () => {
-    const nextValue = !belowIframeFullWidth
-    setBelowIframeFullWidth(nextValue)
-    chrome.storage.sync.set({ [STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]: nextValue })
   }
 
   const onToggleSnapshotsEnabled = () => {
@@ -483,19 +441,7 @@ function IndexPopup() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <section style={sectionCardStyle}>
-            <p style={sectionTitleStyle}>Placement & Layout</p>
-            {renderOptionCards(
-              DISPLAY_OPTIONS,
-              mode,
-              onSelectDisplayMode,
-              "Display mode"
-            )}
-            {renderToggleCard(
-              belowIframeFullWidth,
-              onToggleBelowIframeFullWidth,
-              "Below iframe bar: full page width",
-              "If enabled, status bar uses `width: 100%` instead of iframe width."
-            )}
+            <p style={sectionTitleStyle}>Display</p>
             {renderToggleCard(
               standaloneAmsPreviewBadgeEnabled,
               onToggleStandaloneAmsPreviewBadge,

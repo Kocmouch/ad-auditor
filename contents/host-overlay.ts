@@ -22,7 +22,8 @@ import {
 import { DEFAULTS } from "~lib/storage/defaults"
 import { STORAGE_KEYS } from "~lib/storage/keys"
 import { parsers } from "~lib/storage/parsers"
-import type { DisplayMode, LimitMetric } from "~lib/types/settings"
+import type { LimitMetric } from "~lib/types/settings"
+import { attachDynamicTooltip, attachTooltip } from "~lib/ui/tooltip"
 import { getUsageColor } from "~lib/usage-color"
 import { formatBytes, shortUrl } from "~lib/utils/formatters"
 
@@ -82,10 +83,8 @@ type BadgeState = {
 }
 
 const states = new Map<HTMLIFrameElement, BadgeState>()
-let displayMode: DisplayMode = DEFAULTS.DISPLAY_MODE
 let limitMetric: LimitMetric = DEFAULTS.LIMIT_METRIC
 let limitBytes = DEFAULTS.LIMIT_BYTES
-let belowIframeFullWidth = DEFAULTS.BELOW_IFRAME_FULL_WIDTH
 let snapshotsEnabled = DEFAULTS.ENABLE_SNAPSHOTS
 let waterfallEnabled = DEFAULTS.SHOW_WATERFALL
 let focusOffendersEnabled = DEFAULTS.FOCUS_OFFENDERS
@@ -483,6 +482,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
 
   const statsContainer = document.createElement("span")
   statsContainer.style.color = "#ffffff"
+  statsContainer.style.cursor = "help"
 
   const prefix = document.createElement("span")
   prefix.textContent = "Ad-Auditor "
@@ -501,6 +501,14 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
 
   // Below iframe mode (host-overlay): compact view like inside iframe
   statsContainer.append(resourcesValue)
+
+  // Add dynamic tooltip to stats showing full breakdown
+  attachDynamicTooltip(statsContainer, () => {
+    const transferred = transferredValue.textContent || "0.00 KB"
+    const resources = resourcesValue.textContent || "0.00 KB"
+    const requests = requestCountValue.textContent || "(0 req)"
+    return `${transferred} / ${resources} ${requests}`
+  })
 
   const requestListContainer = document.createElement("div")
   requestListContainer.setAttribute(
@@ -633,7 +641,6 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   const openButton = document.createElement("button")
   openButton.type = "button"
   openButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`
-  openButton.title = "Open in new tab"
   openButton.setAttribute(
     "style",
     [
@@ -651,11 +658,11 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "justify-content: center"
     ].join(";")
   )
+  attachTooltip(openButton, "Open creative in new tab")
 
   const checkFontsButton = document.createElement("button")
   checkFontsButton.type = "button"
   checkFontsButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>`
-  checkFontsButton.title = "Check fonts"
   checkFontsButton.setAttribute(
     "style",
     [
@@ -672,6 +679,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       "justify-content: center"
     ].join(";")
   )
+  attachTooltip(checkFontsButton, "Check font declarations vs rendered fonts")
 
   const middleButtonsGroup = document.createElement("div")
   middleButtonsGroup.setAttribute(
@@ -767,6 +775,48 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
       )
     })
   })
+
+  const checkAccessibilityButton = document.createElement("button")
+  checkAccessibilityButton.type = "button"
+  checkAccessibilityButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 10 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="2" x2="9" y2="2"></line><line x1="1" y1="6" x2="9" y2="6"></line></svg>`
+  checkAccessibilityButton.setAttribute(
+    "style",
+    [
+      "border: 1px solid #7dff6a",
+      "background: transparent",
+      "color: #7dff6a",
+      "border-radius: 4px",
+      "padding: 4px",
+      "font-size: 11px",
+      "line-height: 0",
+      "cursor: pointer",
+      "display: flex",
+      "align-items: center",
+      "justify-content: center"
+    ].join(";")
+  )
+
+  checkAccessibilityButton.addEventListener("click", () => {
+    // Send message to iframe to check accessibility
+    const iframes = Array.from(
+      document.querySelectorAll<HTMLIFrameElement>("iframe")
+    )
+    const iframeIndex = iframes.indexOf(iframe)
+
+    if (iframe.contentWindow) {
+      iframe.contentWindow.postMessage(
+        {
+          type: "ad-auditor-check-accessibility-request"
+        },
+        "*"
+      )
+    }
+  })
+  attachTooltip(
+    checkAccessibilityButton,
+    "Check opt-out visibility & banner border"
+  )
+
   badgeWrapper.addEventListener("mouseenter", () => {
     state.isRequestListHoverActive = true
     updateRequestList(state)
@@ -782,7 +832,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
     openButton,
     requestListContainer
   )
-  middleButtonsGroup.append(checkFontsButton)
+  middleButtonsGroup.append(checkFontsButton, checkAccessibilityButton)
   badgeWrapper.append(badge, alertsContainer)
 
   insertBadgeAfterIframe(iframe, badgeWrapper)
@@ -859,10 +909,6 @@ const refreshAllBadgeWidths = () => {
 }
 
 const handleStatsMessage = (event: MessageEvent) => {
-  if (displayMode !== "below_iframe") {
-    return
-  }
-
   if (
     !event.data ||
     event.data.source !== SOURCE_ID ||
@@ -897,31 +943,23 @@ const handleStatsMessage = (event: MessageEvent) => {
 }
 
 const setSettings = (
-  nextDisplayMode: DisplayMode,
   nextLimitMetric: LimitMetric,
   nextLimitBytes: number,
-  nextBelowIframeFullWidth: boolean,
   nextSnapshotsEnabled: boolean,
   nextWaterfallEnabled: boolean,
   nextFocusOffendersEnabled: boolean,
   nextAlertsEnabled: boolean,
   nextRequestListEnabled: boolean
 ) => {
-  displayMode = nextDisplayMode
   limitMetric = nextLimitMetric
   limitBytes = nextLimitBytes
-  belowIframeFullWidth = nextBelowIframeFullWidth
   snapshotsEnabled = nextSnapshotsEnabled
   waterfallEnabled = nextWaterfallEnabled
   focusOffendersEnabled = nextFocusOffendersEnabled
   alertsEnabled = nextAlertsEnabled
   requestListEnabled = nextRequestListEnabled
 
-  if (displayMode !== "below_iframe") {
-    clearAllBadges()
-    return
-  }
-
+  // Always in below_iframe mode
   refreshAllColors()
   refreshAllBadgeWidths()
   refreshAllDetails()
@@ -930,10 +968,8 @@ const setSettings = (
 const loadSettings = () => {
   chrome.storage.sync.get(
     [
-      STORAGE_KEYS.DISPLAY_MODE,
       STORAGE_KEYS.LIMIT_METRIC,
       STORAGE_KEYS.LIMIT_BYTES,
-      STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH,
       STORAGE_KEYS.ENABLE_SNAPSHOTS,
       STORAGE_KEYS.SHOW_WATERFALL,
       STORAGE_KEYS.FOCUS_OFFENDERS,
@@ -942,12 +978,8 @@ const loadSettings = () => {
     ],
     (result) => {
       setSettings(
-        parsers.displayMode(result[STORAGE_KEYS.DISPLAY_MODE]),
         parsers.limitMetric(result[STORAGE_KEYS.LIMIT_METRIC]),
         parsers.limitBytes(result[STORAGE_KEYS.LIMIT_BYTES]),
-        parsers.belowIframeFullWidth(
-          result[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]
-        ),
         parsers.enableSnapshots(result[STORAGE_KEYS.ENABLE_SNAPSHOTS]),
         parsers.showWaterfall(result[STORAGE_KEYS.SHOW_WATERFALL]),
         parsers.focusOffenders(result[STORAGE_KEYS.FOCUS_OFFENDERS]),
@@ -967,18 +999,11 @@ const observeSettingsChanges = () => {
     let nextDisplayMode = displayMode
     let nextLimitMetric = limitMetric
     let nextLimitBytes = limitBytes
-    let nextBelowIframeFullWidth = belowIframeFullWidth
     let nextSnapshotsEnabled = snapshotsEnabled
     let nextWaterfallEnabled = waterfallEnabled
     let nextFocusOffendersEnabled = focusOffendersEnabled
     let nextAlertsEnabled = alertsEnabled
     let nextRequestListEnabled = requestListEnabled
-
-    if (changes[STORAGE_KEYS.DISPLAY_MODE]) {
-      nextDisplayMode = parsers.displayMode(
-        changes[STORAGE_KEYS.DISPLAY_MODE].newValue
-      )
-    }
 
     if (changes[STORAGE_KEYS.LIMIT_METRIC]) {
       nextLimitMetric = parsers.limitMetric(
@@ -989,12 +1014,6 @@ const observeSettingsChanges = () => {
     if (changes[STORAGE_KEYS.LIMIT_BYTES]) {
       nextLimitBytes = parsers.limitBytes(
         changes[STORAGE_KEYS.LIMIT_BYTES].newValue
-      )
-    }
-
-    if (changes[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH]) {
-      nextBelowIframeFullWidth = parsers.belowIframeFullWidth(
-        changes[STORAGE_KEYS.BELOW_IFRAME_FULL_WIDTH].newValue
       )
     }
 
@@ -1029,10 +1048,8 @@ const observeSettingsChanges = () => {
     }
 
     setSettings(
-      nextDisplayMode,
       nextLimitMetric,
       nextLimitBytes,
-      nextBelowIframeFullWidth,
       nextSnapshotsEnabled,
       nextWaterfallEnabled,
       nextFocusOffendersEnabled,

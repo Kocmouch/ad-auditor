@@ -1,5 +1,4 @@
 import type {
-  DisplayMode,
   LimitMetric,
   MeasurementMethod
 } from "~lib/types/settings"
@@ -7,17 +6,6 @@ import type {
 import { DEFAULTS } from "./defaults"
 
 export const parsers = {
-  displayMode: (value: unknown): DisplayMode => {
-    if (
-      value === "inside_always" ||
-      value === "inside_hover" ||
-      value === "below_iframe"
-    ) {
-      return value
-    }
-    return DEFAULTS.DISPLAY_MODE
-  },
-
   standaloneAmsPreviewBadgeEnabled: (value: unknown): boolean => {
     if (typeof value === "boolean") {
       return value
@@ -58,13 +46,6 @@ export const parsers = {
       return value
     }
     return DEFAULTS.SHOW_CDP_STATUS
-  },
-
-  belowIframeFullWidth: (value: unknown): boolean => {
-    if (typeof value === "boolean") {
-      return value
-    }
-    return DEFAULTS.BELOW_IFRAME_FULL_WIDTH
   },
 
   enableSnapshots: (value: unknown): boolean => {
@@ -111,7 +92,6 @@ export const parsers = {
 }
 
 // Backwards compatibility exports
-export const parseDisplayMode = parsers.displayMode
 export const parseStandaloneAmsPreviewBadgeEnabled =
   parsers.standaloneAmsPreviewBadgeEnabled
 export const parseMeasurementMethod = parsers.measurementMethod
@@ -119,7 +99,6 @@ export const parseLimitMetric = parsers.limitMetric
 export const parseLimitBytes = parsers.limitBytes
 export const parseDisableCache = parsers.disableCache
 export const parseShowCdpStatus = parsers.showCdpStatus
-export const parseBelowIframeFullWidth = parsers.belowIframeFullWidth
 export const parseEnableSnapshots = parsers.enableSnapshots
 export const parseShowWaterfall = parsers.showWaterfall
 export const parseFocusOffenders = parsers.focusOffenders
