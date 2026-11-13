@@ -1,5 +1,8 @@
+import { addHighlight, clearHighlights } from "~lib/ui/highlight"
 import { compositeOver, parseColor, resolveBackground } from "~lib/utils/color"
 import type { RGB } from "~lib/utils/color"
+
+const BORDER_GROUP = "border"
 
 export type BorderIssue = {
   element: string
@@ -54,15 +57,7 @@ const checkBorderVisibility = (
 export const checkBorderElements = (): BorderIssue[] => {
   const issues: BorderIssue[] = []
 
-  // Clear previous highlights
-  const previouslyHighlighted = document.querySelectorAll(
-    "[data-ad-auditor-border-highlight]"
-  )
-  previouslyHighlighted.forEach((el) => {
-    const htmlEl = el as HTMLElement
-    htmlEl.style.boxShadow = ""
-    htmlEl.removeAttribute("data-ad-auditor-border-highlight")
-  })
+  clearHighlights(BORDER_GROUP)
 
   // Find .banner elements (main banner container)
   const bannerElements = document.querySelectorAll(".banner")
@@ -117,8 +112,11 @@ export const checkBorderElements = (): BorderIssue[] => {
 
           if (visibilityCheck && !visibilityCheck.visible) {
             borderIssueFound = true
-            banner.style.boxShadow = "0 0 0 2px #f9ca24 inset"
-            banner.setAttribute("data-ad-auditor-border-highlight", "true")
+            addHighlight(banner, {
+              severity: "warning",
+              label: "Border weak",
+              group: BORDER_GROUP
+            })
 
             issues.push({
               element: `${elementDesc}::after`,
@@ -157,8 +155,11 @@ export const checkBorderElements = (): BorderIssue[] => {
 
           if (visibilityCheck && !visibilityCheck.visible) {
             borderIssueFound = true
-            banner.style.boxShadow = "0 0 0 2px #f9ca24 inset"
-            banner.setAttribute("data-ad-auditor-border-highlight", "true")
+            addHighlight(banner, {
+              severity: "warning",
+              label: "Border weak",
+              group: BORDER_GROUP
+            })
 
             issues.push({
               element: `${elementDesc}::before`,
@@ -191,8 +192,11 @@ export const checkBorderElements = (): BorderIssue[] => {
 
         if (visibilityCheck && !visibilityCheck.visible) {
           borderIssueFound = true
-          banner.style.boxShadow = "0 0 0 2px #f9ca24 inset"
-          banner.setAttribute("data-ad-auditor-border-highlight", "true")
+          addHighlight(banner, {
+            severity: "warning",
+            label: "Border weak",
+            group: BORDER_GROUP
+          })
 
           issues.push({
             element: `${elementDesc} > .border-container`,
@@ -206,8 +210,11 @@ export const checkBorderElements = (): BorderIssue[] => {
 
     // If no border found via either method
     if (!hasBorder && !borderIssueFound) {
-      banner.style.boxShadow = "0 0 0 2px #ff6b6b inset"
-      banner.setAttribute("data-ad-auditor-border-highlight", "true")
+      addHighlight(banner, {
+        severity: "error",
+        label: "Border missing",
+        group: BORDER_GROUP
+      })
 
       issues.push({
         element: elementDesc.substring(0, 50),
@@ -222,13 +229,4 @@ export const checkBorderElements = (): BorderIssue[] => {
   return issues
 }
 
-export const clearBorderHighlights = () => {
-  const highlighted = document.querySelectorAll(
-    "[data-ad-auditor-border-highlight]"
-  )
-  highlighted.forEach((el) => {
-    const htmlEl = el as HTMLElement
-    htmlEl.style.boxShadow = ""
-    htmlEl.removeAttribute("data-ad-auditor-border-highlight")
-  })
-}
+export const clearBorderHighlights = () => clearHighlights(BORDER_GROUP)

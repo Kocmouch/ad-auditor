@@ -1,7 +1,13 @@
 import type { BorderIssue } from "~lib/features/border-checker"
 import type { OptOutIssue } from "~lib/features/optout-checker"
-import { postToFrame, WINDOW_MESSAGE, type WireFontMismatch } from "~lib/messaging"
+import {
+  postToFrame,
+  WINDOW_MESSAGE,
+  type WireContentIssue,
+  type WireFontMismatch
+} from "~lib/messaging"
 import { createAccessibilityResultsPanel } from "~lib/ui/accessibility-results-panel"
+import { createContentResultsPanel } from "~lib/ui/content-results-panel"
 import { getDarkTheme } from "~lib/ui/theme"
 
 const NEUMORPHIC_BUTTON_SHADOW =
@@ -91,6 +97,7 @@ const createFontRow = (mismatch: WireFontMismatch): HTMLDivElement => {
 export const createHostResults = () => {
   let fontContainer: HTMLDivElement | null = null
   let accessibilityContainer: HTMLDivElement | null = null
+  let contentContainer: HTMLDivElement | null = null
   let highlightedIframe: HTMLIFrameElement | null = null
   let panelX = 0
   let panelY = 0
@@ -287,5 +294,32 @@ export const createHostResults = () => {
     document.body.appendChild(panel)
   }
 
-  return { renderAccessibilityResults, renderFontResults }
+  /** Rows ask the iframe (which owns the elements) to focus issue `index`. */
+  const renderContentResults = (
+    issues: WireContentIssue[],
+    iframe: HTMLIFrameElement
+  ) => {
+    contentContainer?.remove()
+    highlightIframe(iframe)
+
+    const panel = createContentResultsPanel(issues, getDarkTheme(), {
+      onClose: () => {
+        removeIframeHighlight()
+        postToFrame(iframe, { type: WINDOW_MESSAGE.CLEAR_CONTENT_HIGHLIGHTS })
+      },
+      onSelect: (index) =>
+        postToFrame(iframe, {
+          index,
+          type: WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE
+        })
+    })
+    contentContainer = panel
+    document.body.appendChild(panel)
+  }
+
+  return {
+    renderAccessibilityResults,
+    renderContentResults,
+    renderFontResults
+  }
 }

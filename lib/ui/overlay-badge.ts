@@ -1,9 +1,12 @@
 import {
   BADGE_FONT_FAMILY,
   createAlertsContainer,
+  attachStatusTooltips,
   createStatsValues,
+  createStatusIndicators,
   createToolbarButton,
-  type StatsValues
+  type StatsValues,
+  type StatusIndicators
 } from "~lib/ui/badge-parts"
 import {
   createRequestPanel,
@@ -17,7 +20,9 @@ export type OverlayBadge = {
   accessibilityButton: HTMLButtonElement
   alerts: HTMLDivElement
   badge: HTMLDivElement
+  contentButton: HTMLButtonElement
   fontsButton: HTMLButtonElement
+  indicators: StatusIndicators
   openButton: HTMLButtonElement
   panel: RequestPanel
   values: StatsValues
@@ -70,6 +75,17 @@ export const createOverlayBadge = (
     return `${transferred} / ${resources} ${requests}`
   })
 
+  const indicators = createStatusIndicators()
+  attachStatusTooltips(indicators)
+  const statsGroup = document.createElement("span")
+  statsGroup.style.display = "inline-flex"
+  statsGroup.style.alignItems = "center"
+  statsGroup.append(
+    statsContainer,
+    indicators.requestIndicator,
+    indicators.statusDot
+  )
+
   const panel = createRequestPanel(panelHandlers)
 
   const openButton = createToolbarButton({
@@ -86,6 +102,11 @@ export const createOverlayBadge = (
     tooltip: "Check opt-out visibility & banner border"
   })
 
+  const contentButton = createToolbarButton({
+    icon: "content",
+    tooltip: "Check images & links"
+  })
+
   const middleButtons = document.createElement("div")
   middleButtons.setAttribute(
     "style",
@@ -97,19 +118,21 @@ export const createOverlayBadge = (
       "justify-content: center"
     ].join(";")
   )
-  middleButtons.append(fontsButton, accessibilityButton)
+  middleButtons.append(fontsButton, accessibilityButton, contentButton)
 
   const alerts = createAlertsContainer(false)
 
   // Child order matters: syncOverlayBadgeLayout positions the open button.
-  badge.append(statsContainer, middleButtons, openButton, panel.container)
+  badge.append(statsGroup, middleButtons, openButton, panel.container)
   wrapper.append(badge, alerts)
 
   return {
     accessibilityButton,
     alerts,
     badge,
+    contentButton,
     fontsButton,
+    indicators,
     openButton,
     panel,
     values,

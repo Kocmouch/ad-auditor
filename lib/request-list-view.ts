@@ -1,3 +1,4 @@
+import type { RequestProblemsResult } from "~lib/features/request-errors"
 import { buildWaterfallLite, filterFocusOffenders } from "~lib/insights"
 import {
   filterAndSortRequestItems,
@@ -35,6 +36,49 @@ export type RequestListView = {
   rows: RequestRowView[]
   summary: string
   waterfall: WaterfallRowView[]
+}
+
+export const PROBLEMS_MAX_ROWS = 8
+
+export type ProblemRowView = {
+  severity: "error" | "warning"
+  text: string
+}
+
+export type ProblemsView = {
+  /** "Problems: 2 errors, 1 warning" or null when there are none. */
+  footer: string | null
+  rows: ProblemRowView[]
+  title: string | null
+}
+
+const plural = (count: number, word: string) =>
+  `${count} ${word}${count === 1 ? "" : "s"}`
+
+/** Pure view-model for the compact "Problems" section of the request panel. */
+export const buildProblemsView = (
+  result: RequestProblemsResult,
+  maxRows = PROBLEMS_MAX_ROWS
+): ProblemsView => {
+  if (result.summary.total === 0) {
+    return { footer: null, rows: [], title: null }
+  }
+
+  // Errors first; keeps the original order within a severity.
+  const sorted = [
+    ...result.problems.filter((problem) => problem.severity === "error"),
+    ...result.problems.filter((problem) => problem.severity === "warning")
+  ]
+  const hidden = result.summary.total - Math.min(sorted.length, maxRows)
+
+  return {
+    footer: hidden > 0 ? `+${hidden} more` : null,
+    rows: sorted.slice(0, maxRows).map((problem) => ({
+      severity: problem.severity,
+      text: `${problem.message} - ${shortUrl(problem.url)}`
+    })),
+    title: `Problems: ${plural(result.summary.errors, "error")}, ${plural(result.summary.warnings, "warning")}`
+  }
 }
 
 export const parseRequestSort = (value: string): RequestSort =>

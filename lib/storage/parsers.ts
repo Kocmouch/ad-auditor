@@ -83,6 +83,20 @@ export const parsers = {
     return DEFAULTS.SHOW_REQUEST_LIST
   },
 
+  enableContentCheck: (value: unknown): boolean => {
+    if (typeof value === "boolean") {
+      return value
+    }
+    return DEFAULTS.ENABLE_CONTENT_CHECK
+  },
+
+  enableAuditAll: (value: unknown): boolean => {
+    if (typeof value === "boolean") {
+      return value
+    }
+    return DEFAULTS.ENABLE_AUDIT_ALL
+  },
+
   settingsVersion: (value: unknown): number => {
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
       return Math.floor(value)
@@ -104,4 +118,6 @@ export const parseShowWaterfall = parsers.showWaterfall
 export const parseFocusOffenders = parsers.focusOffenders
 export const parseShowAlerts = parsers.showAlerts
 export const parseShowRequestList = parsers.showRequestList
+export const parseEnableContentCheck = parsers.enableContentCheck
+export const parseEnableAuditAll = parsers.enableAuditAll
 export const parseSettingsVersion = parsers.settingsVersion

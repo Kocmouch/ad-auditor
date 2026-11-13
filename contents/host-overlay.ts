@@ -1,6 +1,17 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 import {
+  describeCreative,
+  type AuditReportRow
+} from "~lib/audit-report"
+import {
+  fontOutcome,
+  accessibilityOutcome,
+  contentOutcome,
+  requestOutcome,
+  type CheckOutcomes
+} from "~lib/audit-summary"
+import {
   getDefaultContentSettings,
   watchContentSettings,
   type ContentSettings
@@ -11,19 +22,33 @@ import {
   saveSnapshot as saveSnapshotUtil,
   type Totals
 } from "~lib/features/snapshot"
+import {
+  findRequestProblems,
+  type RequestRecord
+} from "~lib/features/request-errors"
 import { buildEnglishAlerts } from "~lib/insights"
 import {
   parseWindowMessage,
   postToFrame,
   postToSelf,
+  findIframeBySourceWindow,
   rememberFrameOrigin,
   resolveSenderIframe,
   sendOpenTab,
   WINDOW_MESSAGE,
   type WireFontMismatch
 } from "~lib/messaging"
-import type { RequestListItem } from "~lib/request-list"
-import { applyUsageColors, renderAlertLines } from "~lib/ui/badge-parts"
+import {
+  applyUsageColors,
+  renderAlertLines,
+  updateStatusIndicators
+} from "~lib/ui/badge-parts"
+import {
+  createAuditAllButton,
+  createAuditReportPanel
+} from "~lib/ui/audit-report-panel"
+import { createPanelMount } from "~lib/ui/panel-mount"
+import { getDarkTheme } from "~lib/ui/theme"
 import {
   createOverlayBadge,
   insertBadgeAfterIframe,
@@ -42,13 +67,16 @@ export const config: PlasmoCSConfig = {
 
 const TECHTOOLS_HOSTNAME = "techtools.rtbhouse.biz"
 const FONT_CHECK_TIMEOUT_MS = 5000
+const AUDIT_TIMEOUT_MS = 8000
 
 type BadgeState = {
+  /** Outcome of each check the user has run on this creative. */
+  checks: CheckOutcomes
   iframe: HTMLIFrameElement
   isRequestListHoverActive: boolean
   parts: OverlayBadge
   requestCount: number
-  requestItems: RequestListItem[]
+  requestItems: RequestRecord[]
   resizeObserver: ResizeObserver
   resources: number
   transferred: number
@@ -56,6 +84,9 @@ type BadgeState = {
 }
 
 const states = new Map<HTMLIFrameElement, BadgeState>()
+const auditPanelMount = createPanelMount()
+let auditAllButton: HTMLButtonElement | null = null
+let isAuditRunning = false
 let settings: ContentSettings = getDefaultContentSettings()
 const savedSnapshotsByUrl = new Map<string, Totals & { capturedAt: number }>()
 
@@ -154,6 +185,122 @@ const requestFontCheck = (
   postToFrame(iframe, { type: WINDOW_MESSAGE.CHECK_FONTS_REQUEST })
 }
 
+const refreshIndicators = (state: BadgeState) =>
+  updateStatusIndicators(
+    state.parts.indicators,
+    state.requestItems,
+    state.checks
+  )
+
+const setCheck = <K extends keyof CheckOutcomes>(
+  state: BadgeState,
+  name: K,
+  outcome: NonNullable<CheckOutcomes[K]>
+) => {
+  state.checks = { ...state.checks, [name]: outcome }
+  refreshIndicators(state)
+}
+
+/** Posts the audit request to one iframe; null when it does not answer. */
+const requestAudit = (
+  iframe: HTMLIFrameElement
+): Promise<CheckOutcomes | null> =>
+  new Promise((resolve) => {
+    const finish = (result: CheckOutcomes | null) => {
+      window.removeEventListener("message", handler)
+      window.clearTimeout(timer)
+      resolve(result)
+    }
+    const handler = (event: MessageEvent) => {
+      if (event.source !== iframe.contentWindow) {
+        return
+      }
+
+      const message = parseWindowMessage(event.data)
+      if (message?.type === WINDOW_MESSAGE.AUDIT_RESPONSE) {
+        rememberFrameOrigin(event.source, event.origin)
+        finish(message.checks)
+      }
+    }
+    const timer = window.setTimeout(() => finish(null), AUDIT_TIMEOUT_MS)
+
+    window.addEventListener("message", handler)
+    postToFrame(iframe, { type: WINDOW_MESSAGE.AUDIT_REQUEST })
+  })
+
+const runAuditAll = async () => {
+  if (isAuditRunning || states.size === 0) {
+    return
+  }
+
+  isAuditRunning = true
+  if (auditAllButton) {
+    auditAllButton.textContent = "Auditing..."
+    auditAllButton.disabled = true
+  }
+
+  try {
+    const order = Array.from(document.querySelectorAll("iframe"))
+    const entries = Array.from(states.values()).sort(
+      (a, b) => order.indexOf(a.iframe) - order.indexOf(b.iframe)
+    )
+    const outcomes = await Promise.all(
+      entries.map((state) => requestAudit(state.iframe))
+    )
+
+    const rows: AuditReportRow[] = entries.map((state, index) => {
+      const rect = state.iframe.getBoundingClientRect()
+      const checks: CheckOutcomes = {
+        ...(outcomes[index] ?? {}),
+        requests: requestOutcome(findRequestProblems(state.requestItems).summary)
+      }
+      state.checks = checks
+      refreshIndicators(state)
+      return {
+        checks,
+        ...describeCreative(
+          {
+            height: rect.height,
+            id: state.iframe.id,
+            name: state.iframe.getAttribute("name") ?? "",
+            width: rect.width
+          },
+          order.indexOf(state.iframe)
+        )
+      }
+    })
+
+    auditPanelMount.show(
+      createAuditReportPanel(rows, getDarkTheme(), {
+        pageUrl: window.location.href
+      })
+    )
+  } finally {
+    isAuditRunning = false
+    if (auditAllButton) {
+      auditAllButton.textContent = "Audit all"
+      auditAllButton.disabled = false
+    }
+  }
+}
+
+/** Shows the floating "Audit all" button while creatives exist and it is on. */
+const syncAuditAllButton = () => {
+  const visible = settings.auditAllEnabled && states.size > 0
+  if (!visible) {
+    auditAllButton?.remove()
+    return
+  }
+
+  if (!auditAllButton) {
+    auditAllButton = createAuditAllButton()
+    auditAllButton.addEventListener("click", () => void runAuditAll())
+  }
+  if (!auditAllButton.isConnected && document.body) {
+    document.body.appendChild(auditAllButton)
+  }
+}
+
 const removeState = (iframe: HTMLIFrameElement) => {
   const state = states.get(iframe)
   if (!state) {
@@ -163,6 +310,7 @@ const removeState = (iframe: HTMLIFrameElement) => {
   state.resizeObserver.disconnect()
   state.parts.wrapper.remove()
   states.delete(iframe)
+  syncAuditAllButton()
 }
 
 const syncBadge = (state: BadgeState) => {
@@ -191,6 +339,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   })
 
   const state: BadgeState = {
+    checks: {},
     iframe,
     isRequestListHoverActive: false,
     parts,
@@ -207,6 +356,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   parts.openButton.addEventListener("click", () => sendOpenTab(state.url))
   parts.fontsButton.addEventListener("click", () => {
     requestFontCheck(iframe, (fontMismatches, iframeUrl) => {
+      setCheck(state, "fonts", fontOutcome(fontMismatches.length))
       // creatives-host.ts renders the results.
       postToSelf({
         fontMismatches,
@@ -221,6 +371,12 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   parts.accessibilityButton.addEventListener("click", () => {
     postToFrame(iframe, { type: WINDOW_MESSAGE.CHECK_ACCESSIBILITY_REQUEST })
   })
+  parts.contentButton.addEventListener("click", () => {
+    postToFrame(iframe, { type: WINDOW_MESSAGE.CHECK_CONTENT_REQUEST })
+  })
+  parts.contentButton.style.display = settings.contentCheckEnabled
+    ? "flex"
+    : "none"
 
   parts.wrapper.addEventListener("mouseenter", () => {
     state.isRequestListHoverActive = true
@@ -234,6 +390,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   syncBadge(state)
   state.resizeObserver.observe(iframe)
   states.set(iframe, state)
+  syncAuditAllButton()
   return state
 }
 
@@ -271,9 +428,41 @@ const applyColors = (state: BadgeState) =>
     settings.limitBytes
   )
 
+/** Check results also reach creatives-host; here they feed the status dot. */
+const handleCheckResponse = (event: MessageEvent) => {
+  const message = parseWindowMessage(event.data)
+  if (
+    message?.type !== WINDOW_MESSAGE.CHECK_ACCESSIBILITY_RESPONSE &&
+    message?.type !== WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE
+  ) {
+    return
+  }
+
+  const iframe = findIframeBySourceWindow(event.source)
+  const state = iframe ? states.get(iframe) : undefined
+  if (!state) {
+    return
+  }
+
+  if (message.type === WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE) {
+    setCheck(state, "content", contentOutcome(message.issues))
+    return
+  }
+
+  setCheck(
+    state,
+    "accessibility",
+    accessibilityOutcome(
+      message.optOutIssues,
+      message.borderIssues
+    )
+  )
+}
+
 const handleWindowMessage = (event: MessageEvent) => {
   const message = parseWindowMessage(event.data)
   if (message?.type !== WINDOW_MESSAGE.STATS) {
+    handleCheckResponse(event)
     return
   }
 
@@ -294,12 +483,17 @@ const handleWindowMessage = (event: MessageEvent) => {
   state.parts.values.requests.textContent = ` (${payload.requestCountText})`
   updateRequestList(state)
   applyColors(state)
+  refreshIndicators(state)
 }
 
 const applySettings = (next: ContentSettings) => {
   settings = next
 
+  syncAuditAllButton()
   for (const [iframe, state] of states) {
+    state.parts.contentButton.style.display = settings.contentCheckEnabled
+      ? "flex"
+      : "none"
     applyColors(state)
     syncOverlayBadgeLayout(iframe, state.parts)
   }

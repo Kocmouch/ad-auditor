@@ -5,7 +5,50 @@ import {
   normalizeDocumentUrl
 } from "~lib/utils/formatters"
 
-import type { DebuggeeWithSession, RequestMetric, TabSession } from "./types"
+import type {
+  DebuggeeWithSession,
+  RequestMetric,
+  RequestProblemFields,
+  TabSession
+} from "./types"
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+/** Case-insensitive header lookup (CDP header names keep the wire casing). */
+const getHeader = (headers: unknown, name: string): string | undefined => {
+  if (!isRecord(headers)) {
+    return undefined
+  }
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === name && typeof value === "string") {
+      return value
+    }
+  }
+  return undefined
+}
+
+/** Only the problem-detection fields that are actually set, for the wire. */
+export const getRequestProblemFields = (
+  metric: RequestMetric
+): RequestProblemFields => {
+  const fields: RequestProblemFields = {}
+  if (metric.httpStatus !== undefined) fields.httpStatus = metric.httpStatus
+  if (metric.failed) fields.failed = true
+  if (metric.blocked) fields.blocked = true
+  if (metric.errorText) fields.errorText = metric.errorText
+  if (metric.contentEncoding !== undefined) {
+    fields.contentEncoding = metric.contentEncoding
+  }
+  if (metric.completed && metric.decodedBytes > 0) {
+    fields.decodedBytes = metric.decodedBytes
+  }
+  if (metric.redirectChain && metric.redirectChain.length > 0) {
+    fields.redirectChain = metric.redirectChain
+  }
+  return fields
+}
 
 export const getRequestKey = (
   session: TabSession,
@@ -84,6 +127,9 @@ export const handleNetworkRequestWillBeSent = (
   session.requestSequenceByRequestId.set(scopedRequestId, nextSequence)
 
   const requestKey = `${scopedRequestId}#${nextSequence}`
+  const previousMetric = hasRedirectResponse
+    ? session.requests.get(`${scopedRequestId}#${currentSequence}`)
+    : undefined
   session.requestKeyByRequestId.set(scopedRequestId, requestKey)
   const documentUrl = normalizeDocumentUrl(
     typeof params?.documentURL === "string" ? params.documentURL : ""
@@ -104,7 +150,22 @@ export const handleNetworkRequestWillBeSent = (
   const effectiveDocumentUrl =
     documentUrl || (requestType === "Document" ? normalizedRequestUrl : "")
 
+  let redirectChain: string[] | undefined
+  if (previousMetric) {
+    const status = isRecord(params?.redirectResponse)
+      ? params.redirectResponse.status
+      : undefined
+    if (typeof status === "number" && status > 0) {
+      previousMetric.httpStatus = status
+    }
+    redirectChain = [
+      ...(previousMetric.redirectChain ?? []),
+      previousMetric.requestUrl
+    ]
+  }
+
   session.requests.set(requestKey, {
+    ...(redirectChain ? { redirectChain } : {}),
     completed: false,
     decodedBytes: 0,
     documentKey: getDocumentKey(effectiveDocumentUrl),
@@ -118,6 +179,35 @@ export const handleNetworkRequestWillBeSent = (
     requestUrlHost: getUrlHost(requestUrlValue),
     startedAt: Date.now()
   })
+}
+
+export const handleNetworkResponseReceived = (
+  session: TabSession,
+  source: chrome.debugger.Debuggee,
+  params?: Record<string, unknown>
+) => {
+  const requestId =
+    typeof params?.requestId === "string" ? params.requestId : ""
+  const response = params?.response
+  if (!requestId || !isRecord(response)) {
+    return
+  }
+
+  const metric = session.requests.get(
+    getRequestKey(session, getScopedRequestId(source, requestId))
+  )
+  if (!metric) {
+    return
+  }
+
+  if (typeof response.status === "number" && response.status > 0) {
+    metric.httpStatus = response.status
+  }
+
+  // Headers are only meaningful for network responses (not data:/blob:).
+  if (typeof response.url === "string" && /^https?:/i.test(response.url)) {
+    metric.contentEncoding = getHeader(response.headers, "content-encoding") ?? ""
+  }
 }
 
 export const handleNetworkDataReceived = (
@@ -178,5 +268,17 @@ export const handleNetworkLoadingFailed = (
   const metric = session.requests.get(requestKey)
   if (metric) {
     metric.completed = true
+    // Cancellations (navigation, aborted ads) are not problems on their own.
+    const blockedReason =
+      typeof params?.blockedReason === "string" ? params.blockedReason : ""
+    const errorText =
+      typeof params?.errorText === "string" ? params.errorText : ""
+    if (blockedReason) {
+      metric.blocked = true
+      metric.errorText = blockedReason
+    } else if (params?.canceled !== true) {
+      metric.failed = true
+      metric.errorText = errorText
+    }
   }
 }

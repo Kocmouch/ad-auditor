@@ -1,3 +1,11 @@
+import {
+  addHighlight,
+  clearHighlights,
+  HIGHLIGHT_LAYER_ID
+} from "~lib/ui/highlight"
+
+const FONT_GROUP = "font"
+
 export type FontMismatch = {
   element: string
   declared: string
@@ -22,17 +30,7 @@ export const checkFontsInDocument = (): FontMismatch[] => {
   const mismatches: FontMismatch[] = []
   const allElements = document.querySelectorAll("*")
 
-  const previouslyHighlighted = document.querySelectorAll(
-    "[data-ad-auditor-font-highlight]"
-  )
-  previouslyHighlighted.forEach((el) => {
-    const htmlEl = el as HTMLElement
-    htmlEl.style.border = ""
-    htmlEl.style.backgroundImage = ""
-    htmlEl.style.backgroundOrigin = ""
-    htmlEl.style.backgroundClip = ""
-    htmlEl.removeAttribute("data-ad-auditor-font-highlight")
-  })
+  clearHighlights(FONT_GROUP)
 
   const hasDirectTextContent = (element: Element): boolean => {
     for (const node of element.childNodes) {
@@ -54,6 +52,10 @@ export const checkFontsInDocument = (): FontMismatch[] => {
 
   for (const element of allElements) {
     if (element.tagName.toLowerCase() === "html") {
+      continue
+    }
+
+    if (element.closest(`#${HIGHLIGHT_LAYER_ID}`)) {
       continue
     }
 
@@ -120,15 +122,11 @@ export const checkFontsInDocument = (): FontMismatch[] => {
             : "")
 
         const htmlElement = element as HTMLElement
-        const originalBackground = htmlElement.style.backgroundImage || "none"
-        htmlElement.style.border = "1px solid transparent"
-        htmlElement.style.backgroundImage = `
-          ${originalBackground === "none" ? "linear-gradient(rgba(255,255,255,0), rgba(255,255,255,0))" : originalBackground},
-          linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #f9ca24, #6c5ce7)
-        `
-        htmlElement.style.backgroundOrigin = "border-box"
-        htmlElement.style.backgroundClip = "padding-box, border-box"
-        htmlElement.setAttribute("data-ad-auditor-font-highlight", "true")
+        addHighlight(htmlElement, {
+          severity: "warning",
+          label: "Font fallback",
+          group: FONT_GROUP
+        })
 
         mismatches.push({
           element: elementDesc.substring(0, 50),
@@ -155,16 +153,4 @@ export const checkFontsInDocument = (): FontMismatch[] => {
   return unique.slice(0, 10)
 }
 
-export const clearFontHighlights = () => {
-  const highlighted = document.querySelectorAll(
-    "[data-ad-auditor-font-highlight]"
-  )
-  highlighted.forEach((el) => {
-    const htmlEl = el as HTMLElement
-    htmlEl.style.border = ""
-    htmlEl.style.backgroundImage = ""
-    htmlEl.style.backgroundOrigin = ""
-    htmlEl.style.backgroundClip = ""
-    htmlEl.removeAttribute("data-ad-auditor-font-highlight")
-  })
-}
+export const clearFontHighlights = () => clearHighlights(FONT_GROUP)

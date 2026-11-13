@@ -1,5 +1,7 @@
+import type { RequestRecord } from "~lib/features/request-errors"
+
 export type Totals = {
-  requestItems: RequestItem[]
+  requestItems: RequestRecord[]
   requests: number
   resources: number
   transferred: number

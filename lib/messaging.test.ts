@@ -4,7 +4,10 @@ import {
   getFrameTargetOrigin,
   getOriginFromSrc,
   parseWindowMessage,
+  sanitizeCheckOutcomes,
+  sanitizeContentIssues,
   sanitizeRequestItems,
+  toWireContentIssues,
   toWireFontMismatches,
   toWireIssues,
   WINDOW_MESSAGE
@@ -34,6 +37,20 @@ describe("wire format", () => {
       "ad-auditor-font-check-results"
     )
     expect(WINDOW_MESSAGE.STATS).toBe("stats")
+    expect(WINDOW_MESSAGE.CHECK_CONTENT_REQUEST).toBe(
+      "ad-auditor-check-content-request"
+    )
+    expect(WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE).toBe(
+      "ad-auditor-check-content-response"
+    )
+    expect(WINDOW_MESSAGE.CLEAR_CONTENT_HIGHLIGHTS).toBe(
+      "ad-auditor-clear-content-highlights"
+    )
+    expect(WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE).toBe(
+      "ad-auditor-focus-content-issue"
+    )
+    expect(WINDOW_MESSAGE.AUDIT_REQUEST).toBe("ad-auditor-audit-request")
+    expect(WINDOW_MESSAGE.AUDIT_RESPONSE).toBe("ad-auditor-audit-response")
   })
 })
 
@@ -151,6 +168,91 @@ describe("parseWindowMessage", () => {
   })
 })
 
+describe("content and audit messages", () => {
+  test("accepts content/audit requests and clear messages", () => {
+    for (const type of [
+      WINDOW_MESSAGE.CHECK_CONTENT_REQUEST,
+      WINDOW_MESSAGE.CLEAR_CONTENT_HIGHLIGHTS,
+      WINDOW_MESSAGE.AUDIT_REQUEST
+    ]) {
+      expect(parseWindowMessage({ type })).toEqual({ type })
+    }
+  })
+
+  test("content response needs an array and drops invalid issues", () => {
+    expect(
+      parseWindowMessage({ type: WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE })
+    ).toBeNull()
+    expect(
+      parseWindowMessage({
+        iframeUrl: "https://x",
+        issues: [
+          { category: "images", kind: "broken", message: "m", severity: "error" },
+          { category: "other", kind: "k", message: "m", severity: "error" },
+          { category: "links", kind: "k", message: "m", severity: "fatal" },
+          "junk"
+        ],
+        type: WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE
+      })
+    ).toEqual({
+      iframeUrl: "https://x",
+      issues: [
+        { category: "images", kind: "broken", message: "m", severity: "error" }
+      ],
+      type: WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE
+    })
+  })
+
+  test("focus message needs a non-negative integer index", () => {
+    const type = WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE
+    expect(parseWindowMessage({ index: 3, type })).toEqual({ index: 3, type })
+    expect(parseWindowMessage({ index: -1, type })).toBeNull()
+    expect(parseWindowMessage({ index: 1.2, type })).toBeNull()
+    expect(parseWindowMessage({ index: "1", type })).toBeNull()
+    expect(parseWindowMessage({ type })).toBeNull()
+  })
+
+  test("audit response keeps only valid check outcomes", () => {
+    expect(
+      parseWindowMessage({
+        checks: {
+          accessibility: { count: 1, severity: "bogus" },
+          content: { count: 2, severity: "warning" },
+          fonts: { count: -4, severity: "ok" },
+          unknown: { count: 1, severity: "error" }
+        },
+        iframeUrl: "https://x",
+        type: WINDOW_MESSAGE.AUDIT_RESPONSE
+      })
+    ).toEqual({
+      checks: {
+        content: { count: 2, severity: "warning" },
+        fonts: { count: 0, severity: "ok" }
+      },
+      iframeUrl: "https://x",
+      type: WINDOW_MESSAGE.AUDIT_RESPONSE
+    })
+    expect(sanitizeCheckOutcomes("nope")).toEqual({})
+  })
+
+  test("toWireContentIssues drops the element and is cloneable", () => {
+    const wire = toWireContentIssues([
+      {
+        category: "links",
+        element: document.createElement("a"),
+        kind: "empty-href",
+        message: "m",
+        severity: "warning"
+      }
+    ])
+    expect(wire).toEqual([
+      { category: "links", kind: "empty-href", message: "m", severity: "warning" }
+    ])
+    expect(structuredClone(wire)).toEqual(wire)
+    expect(sanitizeContentIssues(undefined)).toEqual([])
+  })
+})
+
 describe("wire helpers", () => {
   test("toWireFontMismatches drops the DOM element", () => {
     const wire = toWireFontMismatches([
@@ -177,6 +279,34 @@ describe("wire helpers", () => {
 
   test("sanitizeRequestItems handles non-arrays", () => {
     expect(sanitizeRequestItems(undefined)).toEqual([])
+  })
+
+  test("sanitizeRequestItems keeps well-formed problem fields only", () => {
+    const [item] = sanitizeRequestItems([
+      {
+        blocked: "yes",
+        contentEncoding: "gzip",
+        decodedBytes: 100,
+        errorText: "net::ERR_FAILED",
+        failed: true,
+        httpStatus: 404,
+        redirectChain: ["a", 5, "b"],
+        url: "u"
+      }
+    ])
+    expect(item.httpStatus).toBe(404)
+    expect(item.failed).toBe(true)
+    expect("blocked" in item).toBe(false)
+    expect(item.errorText).toBe("net::ERR_FAILED")
+    expect(item.contentEncoding).toBe("gzip")
+    expect(item.decodedBytes).toBe(100)
+    expect(item.redirectChain).toEqual(["a", "b"])
+  })
+
+  test("sanitizeRequestItems omits absent problem fields", () => {
+    const [item] = sanitizeRequestItems([{ url: "u" }])
+    expect("httpStatus" in item).toBe(false)
+    expect("redirectChain" in item).toBe(false)
   })
 })
 

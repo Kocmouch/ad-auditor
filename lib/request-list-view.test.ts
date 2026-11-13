@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 
+import type { RequestProblemsResult } from "./features/request-errors"
 import type { RequestListItem } from "./request-list"
 import {
+  buildProblemsView,
   buildRequestListView,
   formatRequestMeta,
   getRequestPanelSourceItems,
@@ -100,5 +102,47 @@ describe("request list view", () => {
     expect(
       getRequestPanelSourceItems([light, pending], false, 1_000_000)
     ).toHaveLength(2)
+  })
+})
+
+describe("buildProblemsView", () => {
+  const problem = (
+    severity: "error" | "warning",
+    n: number
+  ): RequestProblemsResult["problems"][number] => ({
+    kind: severity === "error" ? "http-error" : "mixed-content",
+    message: `msg ${n}`,
+    severity,
+    url: `https://a.example.com/${n}`
+  })
+
+  test("is empty without problems", () => {
+    expect(
+      buildProblemsView({
+        problems: [],
+        summary: { errors: 0, total: 0, warnings: 0 }
+      })
+    ).toEqual({ footer: null, rows: [], title: null })
+  })
+
+  test("lists errors first with a counted title", () => {
+    const view = buildProblemsView({
+      problems: [problem("warning", 1), problem("error", 2)],
+      summary: { errors: 1, total: 2, warnings: 1 }
+    })
+    expect(view.title).toBe("Problems: 1 error, 1 warning")
+    expect(view.rows.map((row) => row.severity)).toEqual(["error", "warning"])
+    expect(view.rows[0].text).toBe("msg 2 - https://a.example.com/2")
+    expect(view.footer).toBeNull()
+  })
+
+  test("caps rows and reports the remainder", () => {
+    const problems = Array.from({ length: 5 }, (_, n) => problem("error", n))
+    const view = buildProblemsView(
+      { problems, summary: { errors: 5, total: 7, warnings: 0 } },
+      3
+    )
+    expect(view.rows.length).toBe(3)
+    expect(view.footer).toBe("+4 more")
   })
 })

@@ -106,6 +106,12 @@ function IndexPopup() {
   const [requestListEnabled, setRequestListEnabled] = useState<boolean>(
     DEFAULTS.SHOW_REQUEST_LIST
   )
+  const [contentCheckEnabled, setContentCheckEnabled] = useState<boolean>(
+    DEFAULTS.ENABLE_CONTENT_CHECK
+  )
+  const [auditAllEnabled, setAuditAllEnabled] = useState<boolean>(
+    DEFAULTS.ENABLE_AUDIT_ALL
+  )
   const [cdpStatus, setCdpStatus] = useState<CdpStatus>("idle")
   const [cdpStatusReason, setCdpStatusReason] = useState("")
   const [limitMetric, setLimitMetric] = useState<LimitMetric>(DEFAULTS.LIMIT_METRIC)
@@ -126,6 +132,8 @@ function IndexPopup() {
         STORAGE_KEYS.FOCUS_OFFENDERS,
         STORAGE_KEYS.SHOW_ALERTS,
         STORAGE_KEYS.SHOW_REQUEST_LIST,
+        STORAGE_KEYS.ENABLE_CONTENT_CHECK,
+        STORAGE_KEYS.ENABLE_AUDIT_ALL,
         STORAGE_KEYS.LIMIT_METRIC,
         STORAGE_KEYS.LIMIT_BYTES
       ],
@@ -143,6 +151,12 @@ function IndexPopup() {
         setFocusOffendersEnabled(parsers.focusOffenders(result[STORAGE_KEYS.FOCUS_OFFENDERS]))
         setAlertsEnabled(parsers.showAlerts(result[STORAGE_KEYS.SHOW_ALERTS]))
         setRequestListEnabled(parsers.showRequestList(result[STORAGE_KEYS.SHOW_REQUEST_LIST]))
+        setContentCheckEnabled(
+          parsers.enableContentCheck(result[STORAGE_KEYS.ENABLE_CONTENT_CHECK])
+        )
+        setAuditAllEnabled(
+          parsers.enableAuditAll(result[STORAGE_KEYS.ENABLE_AUDIT_ALL])
+        )
 
         const parsedLimitMetric = parsers.limitMetric(result[STORAGE_KEYS.LIMIT_METRIC])
         const parsedLimitBytes = parsers.limitBytes(result[STORAGE_KEYS.LIMIT_BYTES])
@@ -246,6 +260,18 @@ function IndexPopup() {
     const nextValue = !requestListEnabled
     setRequestListEnabled(nextValue)
     chrome.storage.sync.set({ [STORAGE_KEYS.SHOW_REQUEST_LIST]: nextValue })
+  }
+
+  const onToggleContentCheckEnabled = () => {
+    const nextValue = !contentCheckEnabled
+    setContentCheckEnabled(nextValue)
+    chrome.storage.sync.set({ [STORAGE_KEYS.ENABLE_CONTENT_CHECK]: nextValue })
+  }
+
+  const onToggleAuditAllEnabled = () => {
+    const nextValue = !auditAllEnabled
+    setAuditAllEnabled(nextValue)
+    chrome.storage.sync.set({ [STORAGE_KEYS.ENABLE_AUDIT_ALL]: nextValue })
   }
 
   const openSetupGuide = () => {
@@ -443,6 +469,18 @@ function IndexPopup() {
               onToggleStandaloneAmsPreviewBadge,
               "Show stats on standalone AMS preview tab",
               "URL: `ams.creativecdn.com/ad/creatives?preview=true...`"
+            )}
+            {renderToggleCard(
+              contentCheckEnabled,
+              onToggleContentCheckEnabled,
+              "Show content check button",
+              "Adds an images & links check button to the status bar."
+            )}
+            {renderToggleCard(
+              auditAllEnabled,
+              onToggleAuditAllEnabled,
+              "Show Audit all button",
+              "Runs every check in all creatives on the preview page."
             )}
           </section>
 

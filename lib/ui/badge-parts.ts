@@ -1,7 +1,19 @@
+import {
+  getOverallStatus,
+  requestOutcome,
+  withRequestOutcome,
+  type CheckOutcomes,
+  type OverallStatus
+} from "~lib/audit-summary"
+import {
+  findRequestProblems,
+  type RequestRecord
+} from "~lib/features/request-errors"
 import type { Totals } from "~lib/features/snapshot"
 import type { LimitMetric } from "~lib/types/settings"
+import { SEVERITY_COLORS } from "~lib/ui/highlight"
 import { createIcon, type IconName } from "~lib/ui/icons"
-import { attachTooltip } from "~lib/ui/tooltip"
+import { attachDynamicTooltip, attachTooltip } from "~lib/ui/tooltip"
 import { getUsageColors } from "~lib/usage-display"
 
 export const BADGE_FONT_FAMILY =
@@ -46,6 +58,99 @@ export const createToolbarButton = (
   )
   attachTooltip(button, options.tooltip)
   return button
+}
+
+const STATUS_COLORS: Record<Exclude<OverallStatus, "none">, string> = {
+  amber: SEVERITY_COLORS.warning.color,
+  green: "#7dff6a",
+  red: SEVERITY_COLORS.error.color
+}
+
+const STATUS_LABELS: Record<Exclude<OverallStatus, "none">, string> = {
+  amber: "Audit: warnings found",
+  green: "Audit: no errors or warnings",
+  red: "Audit: errors found"
+}
+
+/** Request-problem indicator and overall audit status dot of a stats bar. */
+export type StatusIndicators = {
+  /** Red/amber "! N" shown when requests have problems. */
+  requestIndicator: HTMLSpanElement
+  /** Green/amber/red dot shown after checks have run. */
+  statusDot: HTMLSpanElement
+}
+
+export const createStatusIndicators = (): StatusIndicators => {
+  const requestIndicator = document.createElement("span")
+  requestIndicator.setAttribute(
+    "style",
+    "display:none;font-weight:700;margin-left:6px;cursor:help"
+  )
+  const statusDot = document.createElement("span")
+  statusDot.setAttribute(
+    "style",
+    [
+      "display:none",
+      "width:8px",
+      "height:8px",
+      "border-radius:50%",
+      "margin-left:6px",
+      "flex-shrink:0",
+      "cursor:help"
+    ].join(";")
+  )
+  statusDot.setAttribute("data-audit-status", "none")
+  return { requestIndicator, statusDot }
+}
+
+/** Adds tooltips; call once after creating the indicators. */
+export const attachStatusTooltips = (indicators: StatusIndicators) => {
+  attachDynamicTooltip(
+    indicators.requestIndicator,
+    () => indicators.requestIndicator.getAttribute("data-summary") ?? ""
+  )
+  attachDynamicTooltip(
+    indicators.statusDot,
+    () => indicators.statusDot.getAttribute("data-summary") ?? ""
+  )
+}
+
+/** Recomputes both indicators from request items and the checks run so far. */
+export const updateStatusIndicators = (
+  indicators: StatusIndicators,
+  items: RequestRecord[],
+  checks: CheckOutcomes
+) => {
+  const { problems, summary } = findRequestProblems(items)
+  const { requestIndicator, statusDot } = indicators
+
+  if (problems.length === 0) {
+    requestIndicator.style.display = "none"
+    requestIndicator.setAttribute("data-summary", "")
+  } else {
+    requestIndicator.style.display = "inline"
+    requestIndicator.style.color =
+      summary.errors > 0
+        ? SEVERITY_COLORS.error.color
+        : SEVERITY_COLORS.warning.color
+    requestIndicator.textContent = `! ${summary.total}`
+    requestIndicator.setAttribute(
+      "data-summary",
+      `Request problems: ${summary.errors} error(s), ${summary.warnings} warning(s)`
+    )
+  }
+
+  const status = getOverallStatus(
+    withRequestOutcome(checks, requestOutcome(summary))
+  )
+  statusDot.setAttribute("data-audit-status", status)
+  if (status === "none") {
+    statusDot.style.display = "none"
+    return
+  }
+  statusDot.style.display = "inline-block"
+  statusDot.style.background = STATUS_COLORS[status]
+  statusDot.setAttribute("data-summary", STATUS_LABELS[status])
 }
 
 export type StatsValues = {

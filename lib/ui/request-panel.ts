@@ -1,6 +1,11 @@
+import {
+  findRequestProblems,
+  type RequestRecord
+} from "~lib/features/request-errors"
 import type { RequestListItem } from "~lib/request-list"
 import { getRequestTypes } from "~lib/request-list"
 import {
+  buildProblemsView,
   buildRequestListView,
   getRequestPanelSourceItems,
   type RequestControlValues,
@@ -29,6 +34,7 @@ export type RequestPanel = {
   container: HTMLDivElement
   hostInput: HTMLInputElement
   list: HTMLUListElement
+  problems: HTMLDivElement
   showAllCheckbox: HTMLInputElement
   snapshotInfo: HTMLSpanElement
   snapshotRow: HTMLDivElement
@@ -51,7 +57,7 @@ export type RequestPanelUpdate = {
   focusOffenders: boolean
   /** Whether the pointer is over the badge (panel is only shown on hover). */
   hoverActive: boolean
-  items: RequestListItem[]
+  items: RequestRecord[]
   limitBytes: number
   waterfallEnabled: boolean
 }
@@ -172,7 +178,13 @@ export const createRequestPanel = (
     "display:none;flex-direction:column;gap:4px;padding:4px 0;border-top:1px dashed rgba(125,255,106,0.35)"
   )
 
-  container.append(snapshotRow, filtersBar, waterfall, list)
+  const problems = document.createElement("div")
+  problems.setAttribute(
+    "style",
+    "display:none;flex-direction:column;gap:2px;padding:4px 0;border-top:1px dashed rgba(125,255,106,0.35);font-size:10px"
+  )
+
+  container.append(snapshotRow, filtersBar, problems, waterfall, list)
 
   typeSelect.addEventListener("change", handlers.onControlChange)
   statusSelect.addEventListener("change", handlers.onControlChange)
@@ -186,6 +198,7 @@ export const createRequestPanel = (
     container,
     hostInput,
     list,
+    problems,
     showAllCheckbox,
     snapshotInfo,
     snapshotRow,
@@ -275,6 +288,45 @@ const renderWaterfall = (
   }
 }
 
+const PROBLEM_COLORS = { error: "#ef4444", warning: "#f59e0b" } as const
+
+/** Compact "Problems" section; hidden when there is nothing to report. */
+export const renderRequestProblems = (
+  container: HTMLDivElement,
+  items: RequestRecord[]
+) => {
+  container.textContent = ""
+  const view = buildProblemsView(findRequestProblems(items))
+  if (!view.title) {
+    container.style.display = "none"
+    return
+  }
+
+  container.style.display = "flex"
+  const title = document.createElement("div")
+  title.textContent = view.title
+  title.setAttribute("style", "font-weight:700;color:#d8dde7")
+  container.appendChild(title)
+
+  for (const row of view.rows) {
+    const line = document.createElement("div")
+    line.textContent = row.text
+    line.setAttribute(
+      "style",
+      `color:${PROBLEM_COLORS[row.severity]};word-break:break-all`
+    )
+    line.setAttribute("data-problem-severity", row.severity)
+    container.appendChild(line)
+  }
+
+  if (view.footer) {
+    const footer = document.createElement("div")
+    footer.textContent = view.footer
+    footer.style.color = "#9db7d2"
+    container.appendChild(footer)
+  }
+}
+
 const renderRequestRows = (list: HTMLUListElement, view: RequestListView) => {
   list.textContent = ""
 
@@ -336,6 +388,7 @@ export const updateRequestPanel = (
     waterfallEnabled: update.waterfallEnabled
   })
   panel.summary.textContent = view.summary
+  renderRequestProblems(panel.problems, update.items)
 
   if (sourceItems.length === 0) {
     panel.container.style.display = "none"

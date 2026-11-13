@@ -6,6 +6,8 @@ import type { LimitMetric, MeasurementMethod } from "~lib/types/settings"
 /** Settings read by the content scripts (monitor / host-overlay). */
 export type ContentSettings = {
   alertsEnabled: boolean
+  auditAllEnabled: boolean
+  contentCheckEnabled: boolean
   focusOffendersEnabled: boolean
   limitBytes: number
   limitMetric: LimitMetric
@@ -18,6 +20,8 @@ export type ContentSettings = {
 
 export const getDefaultContentSettings = (): ContentSettings => ({
   alertsEnabled: DEFAULTS.SHOW_ALERTS,
+  auditAllEnabled: DEFAULTS.ENABLE_AUDIT_ALL,
+  contentCheckEnabled: DEFAULTS.ENABLE_CONTENT_CHECK,
   focusOffendersEnabled: DEFAULTS.FOCUS_OFFENDERS,
   limitBytes: DEFAULTS.LIMIT_BYTES,
   limitMetric: DEFAULTS.LIMIT_METRIC,
@@ -30,6 +34,8 @@ export const getDefaultContentSettings = (): ContentSettings => ({
 
 const FIELD_KEYS: Record<keyof ContentSettings, string> = {
   alertsEnabled: STORAGE_KEYS.SHOW_ALERTS,
+  auditAllEnabled: STORAGE_KEYS.ENABLE_AUDIT_ALL,
+  contentCheckEnabled: STORAGE_KEYS.ENABLE_CONTENT_CHECK,
   focusOffendersEnabled: STORAGE_KEYS.FOCUS_OFFENDERS,
   limitBytes: STORAGE_KEYS.LIMIT_BYTES,
   limitMetric: STORAGE_KEYS.LIMIT_METRIC,
@@ -42,6 +48,8 @@ const FIELD_KEYS: Record<keyof ContentSettings, string> = {
 
 const FIELD_PARSERS: { [K in keyof ContentSettings]: (v: unknown) => ContentSettings[K] } = {
   alertsEnabled: parsers.showAlerts,
+  auditAllEnabled: parsers.enableAuditAll,
+  contentCheckEnabled: parsers.enableContentCheck,
   focusOffendersEnabled: parsers.focusOffenders,
   limitBytes: parsers.limitBytes,
   limitMetric: parsers.limitMetric,

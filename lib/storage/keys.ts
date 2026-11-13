@@ -10,7 +10,9 @@ export const STORAGE_KEYS = {
   SHOW_WATERFALL: "adAuditorShowWaterfall",
   FOCUS_OFFENDERS: "adAuditorFocusOffenders",
   SHOW_ALERTS: "adAuditorShowAlerts",
-  SHOW_REQUEST_LIST: "adAuditorShowRequestList"
+  SHOW_REQUEST_LIST: "adAuditorShowRequestList",
+  ENABLE_CONTENT_CHECK: "adAuditorEnableContentCheck",
+  ENABLE_AUDIT_ALL: "adAuditorEnableAuditAll"
 } as const
 
-export const CURRENT_SETTINGS_VERSION = 4
+export const CURRENT_SETTINGS_VERSION = 5

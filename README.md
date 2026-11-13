@@ -36,7 +36,7 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
   - includes interactive onboarding checklist and quick actions
 - **Font checking** (button with "T" icon):
   - Detects font mismatches (declared vs rendered)
-  - Highlights affected elements with a colorful gradient border
+  - Highlights affected elements with severity-colored overlay boxes
   - Shows a results panel with details
 - **Accessibility checking** (button with 3-line icon):
   - **Opt-out detection**: finds `.optout`/`#optout` elements in iframes and AMS
@@ -44,6 +44,17 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
   - **Border validation**: detects missing or invisible borders on banner containers
   - Highlights issues with colored outlines (red for critical, yellow for warnings)
   - Shows a unified results panel with a detailed breakdown
+- **Content checking** (button with picture icon; setting `Show content check button`, default ON):
+  - Images: broken, oversized vs rendered size, legacy formats/large GIFs
+  - Links: empty/insecure hrefs, missing target/noopener, hidden or duplicate links, `clickTag` problems
+  - Highlights elements in the creative (group `images`/`links`) and lists issues by severity; clicking a row scrolls to the element
+- **Request problems** (Enhanced CDP; Legacy mode only detects mixed content):
+  - HTTP 4xx/5xx, failed/blocked requests, mixed content, uncompressed text, redirect chains
+  - Compact "Problems" section in the request list and a red/amber `! N` indicator on the stats bar
+- **Overall status dot** (green/amber/red) on the stats bar after any check has run, from the worst font/accessibility/content/request severity
+- **Audit all** (button at the bottom-left of preview pages; setting `Show Audit all button`, default ON):
+  - Runs every check in all creatives and shows a creative x check x severity table
+  - `Copy report` copies it as Markdown
 
 ## Defaults and Settings Migration
 
@@ -56,6 +67,7 @@ On fresh install, the extension saves defaults to `chrome.storage.sync`:
 - `DISABLE_CACHE = true`
 - `SHOW_CDP_STATUS = false`
 - `ENABLE_SNAPSHOTS`, `SHOW_WATERFALL`, `FOCUS_OFFENDERS`, `SHOW_ALERTS`, `SHOW_REQUEST_LIST = false`
+- `ENABLE_CONTENT_CHECK`, `ENABLE_AUDIT_ALL = true`
 
 (Source of truth: `lib/storage/defaults.ts`.)
 

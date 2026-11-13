@@ -1,8 +1,22 @@
+import type { RequestRecord } from "~lib/features/request-errors"
+
 export type DebuggeeWithSession = chrome.debugger.Debuggee & {
   sessionId?: string
 }
 
-export type RequestMetric = {
+/** Optional extras filled from CDP Network events (see network-tracker). */
+export type RequestProblemFields = Pick<
+  RequestRecord,
+  | "blocked"
+  | "contentEncoding"
+  | "decodedBytes"
+  | "errorText"
+  | "failed"
+  | "httpStatus"
+  | "redirectChain"
+>
+
+export type RequestMetric = RequestProblemFields & {
   completed: boolean
   decodedBytes: number
   documentKey: string
@@ -17,7 +31,7 @@ export type RequestMetric = {
   startedAt: number
 }
 
-export type RequestDetails = {
+export type RequestDetails = RequestProblemFields & {
   host: string
   resources: number
   status: "done" | "pending"

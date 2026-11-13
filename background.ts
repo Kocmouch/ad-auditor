@@ -17,7 +17,9 @@ import {
   handleNetworkRequestWillBeSent,
   handleNetworkDataReceived,
   handleNetworkLoadingFinished,
-  handleNetworkLoadingFailed
+  handleNetworkLoadingFailed,
+  handleNetworkResponseReceived,
+  getRequestProblemFields
 } from "~lib/cdp/network-tracker"
 import {
   getInstallDefaults,
@@ -204,6 +206,11 @@ const handleDebuggerEvent = (
     return
   }
 
+  if (method === "Network.responseReceived") {
+    handleNetworkResponseReceived(session, source, params)
+    return
+  }
+
   if (method === "Network.dataReceived") {
     handleNetworkDataReceived(session, source, params)
     return
@@ -279,6 +286,7 @@ const getEnhancedStatsForTab = async (tabId: number, documentUrl: string) => {
     const metricResources = metric.decodedBytes
     const metricStatus: "done" | "pending" = metric.completed ? "done" : "pending"
     const requestDetails: RequestDetails = {
+      ...getRequestProblemFields(metric),
       host: metric.requestUrlHost,
       resources: Math.max(0, Math.round(metricResources)),
       status: metricStatus,

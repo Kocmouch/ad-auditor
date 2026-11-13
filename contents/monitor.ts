@@ -1,9 +1,19 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 import {
+  clearContentCheck,
+  focusContentIssue,
   listenForAccessibilityRequests,
-  runAccessibilityChecks
+  listenForContentRequests,
+  runAccessibilityChecks,
+  runContentCheck
 } from "~lib/audit-actions"
+import {
+  accessibilityOutcome,
+  contentOutcome,
+  fontOutcome,
+  type CheckOutcomes
+} from "~lib/audit-summary"
 import { findNestedAmsPreviewUrl, isStandaloneAmsPreviewLocation } from "~lib/audit-url"
 import {
   getDefaultContentSettings,
@@ -25,11 +35,17 @@ import {
   postToParent,
   requestEnhancedStats,
   sendOpenTab,
+  toWireContentIssues,
   WINDOW_MESSAGE
 } from "~lib/messaging"
 import type { RequestListItem } from "~lib/request-list"
 import { createAccessibilityResultsPanel } from "~lib/ui/accessibility-results-panel"
-import { applyUsageColors, renderAlertLines } from "~lib/ui/badge-parts"
+import {
+  applyUsageColors,
+  renderAlertLines,
+  updateStatusIndicators
+} from "~lib/ui/badge-parts"
+import { createContentResultsPanel } from "~lib/ui/content-results-panel"
 import { createFontCheckResultsPanel } from "~lib/ui/font-results-panel"
 import { createPanelMount } from "~lib/ui/panel-mount"
 import { updateRequestPanel, updateSnapshotRow } from "~lib/ui/request-panel"
@@ -77,6 +93,8 @@ let enhancedRequestInFlight = false
 const savedSnapshotsByUrl = new Map<string, Totals & { capturedAt: number }>()
 const fontPanelMount = createPanelMount()
 const accessibilityPanelMount = createPanelMount()
+const contentPanelMount = createPanelMount()
+let checks: CheckOutcomes = {}
 
 const getEffectiveAuditUrl = (): string =>
   findNestedAmsPreviewUrl(
@@ -137,13 +155,38 @@ const renderRequestList = () => {
   })
 }
 
+const refreshStatusIndicators = () => {
+  if (badge) {
+    updateStatusIndicators(badge.indicators, latestRequestItems, checks)
+  }
+}
+
 const handleCheckFonts = () => {
   const mismatches = checkFontsInDocument()
+  checks = { ...checks, fonts: fontOutcome(mismatches.length) }
+  refreshStatusIndicators()
   fontPanelMount.show(createFontCheckResultsPanel(mismatches, getDarkTheme()))
+}
+
+const handleCheckContent = () => {
+  const issues = runContentCheck()
+  checks = { ...checks, content: contentOutcome(issues) }
+  refreshStatusIndicators()
+  contentPanelMount.show(
+    createContentResultsPanel(toWireContentIssues(issues), getDarkTheme(), {
+      onClose: clearContentCheck,
+      onSelect: focusContentIssue
+    })
+  )
 }
 
 const handleCheckAccessibility = () => {
   const { borderIssues, optOutIssues } = runAccessibilityChecks()
+  checks = {
+    ...checks,
+    accessibility: accessibilityOutcome(optOutIssues, borderIssues)
+  }
+  refreshStatusIndicators()
   accessibilityPanelMount.show(
     createAccessibilityResultsPanel(optOutIssues, borderIssues, getDarkTheme())
   )
@@ -166,6 +209,7 @@ const ensureBadge = () => {
     )
     next.fontsButton.addEventListener("click", handleCheckFonts)
     next.accessibilityButton.addEventListener("click", handleCheckAccessibility)
+    next.contentButton.addEventListener("click", handleCheckContent)
     next.badge.addEventListener("mouseenter", () => {
       isRequestListHoverActive = true
       renderRequestList()
@@ -181,6 +225,9 @@ const ensureBadge = () => {
 
   // Standalone AMS page: no "Open" button (already on the page).
   applyStandaloneBadgeLayout(badge, false, true)
+  badge.contentButton.style.display = settings.contentCheckEnabled
+    ? "flex"
+    : "none"
 }
 
 const removeBadge = () => {
@@ -269,6 +316,7 @@ const render = () => {
   badge.values.resources.textContent = formatBytes(totals.resources)
   badge.values.requests.textContent = ` (${totals.requests} req)`
   latestRequestItems = totals.requestItems
+  refreshStatusIndicators()
   updateSnapshotControls()
   renderRequestList()
   updateAlertsUi(totals)
@@ -381,6 +429,7 @@ const init = () => {
     if (isIframeContext) {
       // Requests from host-overlay (font requests: iframe-font-checker.ts).
       listenForAccessibilityRequests()
+      listenForContentRequests()
     }
 
     startLegacyUpdates()

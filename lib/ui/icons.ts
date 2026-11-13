@@ -11,7 +11,7 @@ export type IconSpec = {
   viewBox: string
 }
 
-export type IconName = "accessibility" | "fonts" | "open"
+export type IconName = "accessibility" | "content" | "fonts" | "open"
 
 /** Static icon geometry; rendered with createElementNS (no innerHTML). */
 export const ICONS: Record<IconName, IconSpec> = {
@@ -33,6 +33,18 @@ export const ICONS: Record<IconName, IconSpec> = {
       { attrs: { points: "4 7 4 4 20 4 20 7" }, tag: "polyline" },
       { attrs: { x1: "9", x2: "15", y1: "20", y2: "20" }, tag: "line" },
       { attrs: { x1: "12", x2: "12", y1: "4", y2: "20" }, tag: "line" }
+    ],
+    viewBox: "0 0 24 24"
+  },
+  content: {
+    rounded: true,
+    shapes: [
+      {
+        attrs: { d: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" },
+        tag: "path"
+      },
+      { attrs: { points: "4 17 9 12 13 16 16 13 20 17" }, tag: "polyline" },
+      { attrs: { d: "M8.5 8.5h.01" }, tag: "path" }
     ],
     viewBox: "0 0 24 24"
   },

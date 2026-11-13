@@ -52,5 +52,13 @@ window.addEventListener("message", (event) => {
         iframe
       )
     }
+    return
+  }
+
+  if (message.type === WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE) {
+    const iframe = resolveSenderIframe(event)
+    if (iframe) {
+      results.renderContentResults(message.issues, iframe)
+    }
   }
 })

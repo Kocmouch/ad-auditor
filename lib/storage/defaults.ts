@@ -14,5 +14,7 @@ export const DEFAULTS = {
   SHOW_WATERFALL: false as boolean,
   FOCUS_OFFENDERS: false as boolean,
   SHOW_ALERTS: false as boolean,
-  SHOW_REQUEST_LIST: false as boolean
+  SHOW_REQUEST_LIST: false as boolean,
+  ENABLE_CONTENT_CHECK: true as boolean,
+  ENABLE_AUDIT_ALL: true as boolean
 }

@@ -1,3 +1,4 @@
+import { addHighlight, clearHighlights } from "~lib/ui/highlight"
 import {
   getTextContrast,
   parseColor,
@@ -12,20 +13,13 @@ export type OptOutIssue = {
   htmlElement?: HTMLElement
 }
 
+const OPTOUT_GROUP = "optout"
 const MIN_CONTRAST_RATIO = 4.5
 
 export const checkOptOutElements = (): OptOutIssue[] => {
   const issues: OptOutIssue[] = []
 
-  // Clear previous highlights
-  const previouslyHighlighted = document.querySelectorAll(
-    "[data-ad-auditor-optout-highlight]"
-  )
-  previouslyHighlighted.forEach((el) => {
-    const htmlEl = el as HTMLElement
-    htmlEl.style.outline = ""
-    htmlEl.removeAttribute("data-ad-auditor-optout-highlight")
-  })
+  clearHighlights(OPTOUT_GROUP)
 
   // Find opt-out elements by class or id
   const optOutSelectors = [
@@ -79,8 +73,11 @@ export const checkOptOutElements = (): OptOutIssue[] => {
       computed.visibility === "hidden" ||
       computed.opacity === "0"
     ) {
-      element.style.outline = "2px solid #ff6b6b"
-      element.setAttribute("data-ad-auditor-optout-highlight", "true")
+      addHighlight(element, {
+        severity: "error",
+        label: "Opt-out hidden",
+        group: OPTOUT_GROUP
+      })
 
       issues.push({
         element: elementDesc.substring(0, 50),
@@ -97,8 +94,11 @@ export const checkOptOutElements = (): OptOutIssue[] => {
     const bg = resolveBackground(element)
 
     if (bg.kind === "unverifiable") {
-      element.style.outline = "2px solid #74b9ff"
-      element.setAttribute("data-ad-auditor-optout-highlight", "true")
+      addHighlight(element, {
+        severity: "info",
+        label: "Verify contrast",
+        group: OPTOUT_GROUP
+      })
       issues.push({
         element: elementDesc.substring(0, 50),
         issueType: "contrast-unverifiable",
@@ -110,8 +110,11 @@ export const checkOptOutElements = (): OptOutIssue[] => {
 
     const contrastRatio = getTextContrast(textColor, bg.color)
     if (contrastRatio < MIN_CONTRAST_RATIO) {
-      element.style.outline = "2px solid #f9ca24"
-      element.setAttribute("data-ad-auditor-optout-highlight", "true")
+      addHighlight(element, {
+        severity: "error",
+        label: `Low contrast ${contrastRatio.toFixed(1)}:1`,
+        group: OPTOUT_GROUP
+      })
 
       issues.push({
         element: elementDesc.substring(0, 50),
@@ -126,13 +129,4 @@ export const checkOptOutElements = (): OptOutIssue[] => {
   return issues
 }
 
-export const clearOptOutHighlights = () => {
-  const highlighted = document.querySelectorAll(
-    "[data-ad-auditor-optout-highlight]"
-  )
-  highlighted.forEach((el) => {
-    const htmlEl = el as HTMLElement
-    htmlEl.style.outline = ""
-    htmlEl.removeAttribute("data-ad-auditor-optout-highlight")
-  })
-}
+export const clearOptOutHighlights = () => clearHighlights(OPTOUT_GROUP)

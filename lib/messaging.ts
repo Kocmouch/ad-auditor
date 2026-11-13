@@ -35,10 +35,20 @@
  * This module must stay free of DOM access at import time so background.ts can
  * import the runtime constants.
  */
+import {
+  CHECK_NAMES,
+  isCheckSeverity,
+  type CheckOutcomes
+} from "~lib/audit-summary"
 import type { BorderIssue } from "~lib/features/border-checker"
+import type {
+  ContentCategory,
+  ContentIssue,
+  ContentSeverity
+} from "~lib/features/content-checker"
 import type { FontMismatch } from "~lib/features/font-checker"
 import type { OptOutIssue } from "~lib/features/optout-checker"
-import type { RequestListItem } from "~lib/request-list"
+import type { RequestRecord } from "~lib/features/request-errors"
 
 export const MESSAGE_SOURCE = "ad-auditor"
 
@@ -59,7 +69,19 @@ export const WINDOW_MESSAGE = {
   /** host -> iframe: remove opt-out/border highlights. */
   CLEAR_ACCESSIBILITY_HIGHLIGHTS: "ad-auditor-clear-accessibility-highlights",
   /** host-overlay -> creatives-host (same window): show font results. */
-  FONT_CHECK_RESULTS: "ad-auditor-font-check-results"
+  FONT_CHECK_RESULTS: "ad-auditor-font-check-results",
+  /** host -> iframe: run the image + link ("content") checks. */
+  CHECK_CONTENT_REQUEST: "ad-auditor-check-content-request",
+  /** iframe -> parent: content check result. */
+  CHECK_CONTENT_RESPONSE: "ad-auditor-check-content-response",
+  /** host -> iframe: remove image/link highlights. */
+  CLEAR_CONTENT_HIGHLIGHTS: "ad-auditor-clear-content-highlights",
+  /** host -> iframe: scroll to and flash the highlight of one content issue. */
+  FOCUS_CONTENT_ISSUE: "ad-auditor-focus-content-issue",
+  /** host -> iframe: run every check ("Audit all"). */
+  AUDIT_REQUEST: "ad-auditor-audit-request",
+  /** iframe -> parent: worst severity per check for "Audit all". */
+  AUDIT_RESPONSE: "ad-auditor-audit-response"
 } as const
 
 /** Types of chrome.runtime.sendMessage messages. */
@@ -72,7 +94,7 @@ export const RUNTIME_MESSAGE = {
 export type StatsPayload = {
   requestCount: number
   requestCountText: string
-  requestItems: RequestListItem[]
+  requestItems: RequestRecord[]
   resources: number
   resourcesText: string
   transferred: number
@@ -89,6 +111,14 @@ export type WireFontMismatch = Pick<
 /** Issue as sent over the wire (DOM element references are not cloneable). */
 export type WireOptOutIssue = Omit<OptOutIssue, "htmlElement">
 export type WireBorderIssue = Omit<BorderIssue, "htmlElement">
+
+/** Content issue as sent over the wire (no DOM element; focus uses the index). */
+export type WireContentIssue = {
+  category: ContentCategory
+  kind: string
+  severity: ContentSeverity
+  message: string
+}
 
 export type WindowMessage =
   | { type: typeof WINDOW_MESSAGE.STATS; source: typeof MESSAGE_SOURCE; payload: StatsPayload }
@@ -112,6 +142,20 @@ export type WindowMessage =
       fontMismatches: WireFontMismatch[]
       iframeUrl: string
       iframeIndex: number
+    }
+  | { type: typeof WINDOW_MESSAGE.CHECK_CONTENT_REQUEST }
+  | {
+      type: typeof WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE
+      issues: WireContentIssue[]
+      iframeUrl: string
+    }
+  | { type: typeof WINDOW_MESSAGE.CLEAR_CONTENT_HIGHLIGHTS }
+  | { type: typeof WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE; index: number }
+  | { type: typeof WINDOW_MESSAGE.AUDIT_REQUEST }
+  | {
+      type: typeof WINDOW_MESSAGE.AUDIT_RESPONSE
+      checks: CheckOutcomes
+      iframeUrl: string
     }
 
 /** Subset of a RuntimeMessage response used by content scripts. */
@@ -140,25 +184,52 @@ const toCount = (value: unknown): number => Math.max(0, Number(value) || 0)
 
 const toStr = (value: unknown): string => (typeof value === "string" ? value : "")
 
-export const sanitizeRequestItems = (value: unknown): RequestListItem[] => {
+export const sanitizeRequestItems = (value: unknown): RequestRecord[] => {
   if (!Array.isArray(value)) {
     return []
   }
 
-  const items: RequestListItem[] = []
+  const items: RequestRecord[] = []
   for (const entry of value) {
     if (!isRecord(entry)) {
       continue
     }
 
-    items.push({
+    const item: RequestRecord = {
       host: toStr(entry.host),
       resources: toCount(entry.resources),
       status: entry.status === "pending" ? "pending" : "done",
       transferred: toCount(entry.transferred),
       type: toStr(entry.type),
       url: toStr(entry.url)
-    })
+    }
+
+    // Optional problem-detection fields (CDP only); copied when well-formed.
+    if (typeof entry.httpStatus === "number" && entry.httpStatus > 0) {
+      item.httpStatus = Math.floor(entry.httpStatus)
+    }
+    if (entry.failed === true) {
+      item.failed = true
+    }
+    if (entry.blocked === true) {
+      item.blocked = true
+    }
+    if (typeof entry.errorText === "string") {
+      item.errorText = entry.errorText
+    }
+    if (typeof entry.contentEncoding === "string") {
+      item.contentEncoding = entry.contentEncoding
+    }
+    if (typeof entry.decodedBytes === "number") {
+      item.decodedBytes = toCount(entry.decodedBytes)
+    }
+    if (Array.isArray(entry.redirectChain)) {
+      item.redirectChain = entry.redirectChain.filter(
+        (url): url is string => typeof url === "string"
+      )
+    }
+
+    items.push(item)
   }
 
   return items
@@ -185,6 +256,55 @@ export const sanitizeFontMismatches = (value: unknown): WireFontMismatch[] => {
   return result
 }
 
+const CONTENT_CATEGORIES: readonly ContentCategory[] = ["images", "links"]
+const CONTENT_SEVERITIES: readonly ContentSeverity[] = [
+  "error",
+  "warning",
+  "info"
+]
+
+export const sanitizeContentIssues = (value: unknown): WireContentIssue[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const result: WireContentIssue[] = []
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      !CONTENT_CATEGORIES.includes(entry.category as ContentCategory) ||
+      !CONTENT_SEVERITIES.includes(entry.severity as ContentSeverity)
+    ) {
+      continue
+    }
+
+    result.push({
+      category: entry.category as ContentCategory,
+      kind: toStr(entry.kind),
+      message: toStr(entry.message),
+      severity: entry.severity as ContentSeverity
+    })
+  }
+
+  return result
+}
+
+export const sanitizeCheckOutcomes = (value: unknown): CheckOutcomes => {
+  const outcomes: CheckOutcomes = {}
+  if (!isRecord(value)) {
+    return outcomes
+  }
+
+  for (const name of CHECK_NAMES) {
+    const entry = value[name]
+    if (isRecord(entry) && isCheckSeverity(entry.severity)) {
+      outcomes[name] = { count: toCount(entry.count), severity: entry.severity }
+    }
+  }
+
+  return outcomes
+}
+
 const sanitizeIssueList = <T>(value: unknown): T[] =>
   Array.isArray(value) ? (value.filter(isRecord) as unknown as T[]) : []
 
@@ -193,6 +313,17 @@ export const toWireIssues = <T extends { htmlElement?: HTMLElement }>(
   issues: T[]
 ): Omit<T, "htmlElement">[] =>
   issues.map(({ htmlElement: _htmlElement, ...rest }) => rest)
+
+/** Strip the non-cloneable `element` reference from content issues. */
+export const toWireContentIssues = (
+  issues: ContentIssue[]
+): WireContentIssue[] =>
+  issues.map(({ category, kind, message, severity }) => ({
+    category,
+    kind,
+    message,
+    severity
+  }))
 
 /** Strip non-cloneable fields (DOM element references) before posting. */
 export const toWireFontMismatches = (
@@ -239,9 +370,34 @@ export const parseWindowMessage = (data: unknown): WindowMessage | null => {
     }
     case WINDOW_MESSAGE.CHECK_FONTS_REQUEST:
     case WINDOW_MESSAGE.CHECK_ACCESSIBILITY_REQUEST:
+    case WINDOW_MESSAGE.CHECK_CONTENT_REQUEST:
+    case WINDOW_MESSAGE.AUDIT_REQUEST:
     case WINDOW_MESSAGE.CLEAR_FONT_HIGHLIGHTS:
     case WINDOW_MESSAGE.CLEAR_ACCESSIBILITY_HIGHLIGHTS:
+    case WINDOW_MESSAGE.CLEAR_CONTENT_HIGHLIGHTS:
       return { type: data.type }
+    case WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE:
+      if (!Array.isArray(data.issues)) {
+        return null
+      }
+      return {
+        iframeUrl: toStr(data.iframeUrl),
+        issues: sanitizeContentIssues(data.issues),
+        type: data.type
+      }
+    case WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE: {
+      const index = data.index
+      if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+        return null
+      }
+      return { index, type: data.type }
+    }
+    case WINDOW_MESSAGE.AUDIT_RESPONSE:
+      return {
+        checks: sanitizeCheckOutcomes(data.checks),
+        iframeUrl: toStr(data.iframeUrl),
+        type: data.type
+      }
     case WINDOW_MESSAGE.CHECK_FONTS_RESPONSE:
       if (!Array.isArray(data.fontMismatches)) {
         return null

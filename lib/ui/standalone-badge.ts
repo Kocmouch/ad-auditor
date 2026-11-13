@@ -1,9 +1,12 @@
 import {
   BADGE_FONT_FAMILY,
   createAlertsContainer,
+  attachStatusTooltips,
   createStatsValues,
+  createStatusIndicators,
   createToolbarButton,
-  type StatsValues
+  type StatsValues,
+  type StatusIndicators
 } from "~lib/ui/badge-parts"
 import {
   createRequestPanel,
@@ -19,7 +22,9 @@ export type StandaloneBadge = {
   alerts: HTMLDivElement
   badge: HTMLDivElement
   buttons: HTMLDivElement
+  contentButton: HTMLButtonElement
   fontsButton: HTMLButtonElement
+  indicators: StatusIndicators
   openButton: HTMLButtonElement
   panel: RequestPanel
   values: StatsValues
@@ -62,6 +67,9 @@ export const createStandaloneBadge = (
     values.resources,
     values.requests
   )
+  const indicators = createStatusIndicators()
+  attachStatusTooltips(indicators)
+  stats.append(indicators.requestIndicator, indicators.statusDot)
 
   const panel = createRequestPanel(panelHandlers)
 
@@ -83,6 +91,13 @@ export const createStandaloneBadge = (
     tooltip: "Check opt-out visibility & banner border"
   })
 
+  const contentButton = createToolbarButton({
+    icon: "content",
+    marginLeft: "4px",
+    raised: true,
+    tooltip: "Check images & links"
+  })
+
   const alerts = createAlertsContainer(true)
 
   const buttons = document.createElement("div")
@@ -90,7 +105,7 @@ export const createStandaloneBadge = (
     "style",
     ["display: flex", "gap: 4px", "margin-left: auto"].join(";")
   )
-  buttons.append(fontsButton, accessibilityButton)
+  buttons.append(fontsButton, accessibilityButton, contentButton)
 
   badge.append(stats, buttons, openButton, panel.container, alerts)
 
@@ -99,7 +114,9 @@ export const createStandaloneBadge = (
     alerts,
     badge,
     buttons,
+    contentButton,
     fontsButton,
+    indicators,
     openButton,
     panel,
     values
