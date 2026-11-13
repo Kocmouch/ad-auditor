@@ -2,19 +2,27 @@ import type { PlasmoCSConfig } from "plasmo"
 
 import {
   clearContentCheck,
+  clearQualityCheck,
   focusContentIssue,
+  focusQualityIssue,
   listenForAccessibilityRequests,
   listenForContentRequests,
   runAccessibilityChecks,
-  runContentCheck
+  runContentCheck,
+  runQualityCheck
 } from "~lib/audit-actions"
 import {
   accessibilityOutcome,
   contentOutcome,
   fontOutcome,
+  qualityOutcome,
   type CheckOutcomes
 } from "~lib/audit-summary"
-import { findNestedAmsPreviewUrl, isStandaloneAmsPreviewLocation } from "~lib/audit-url"
+import {
+  findNestedAmsPreviewUrl,
+  isStandaloneAmsPreviewLocation
+} from "~lib/audit-url"
+import type { ConsoleProblem } from "~lib/cdp/types"
 import {
   getDefaultContentSettings,
   watchContentSettings,
@@ -34,8 +42,10 @@ import {
   MESSAGE_SOURCE,
   postToParent,
   requestEnhancedStats,
+  sanitizeConsoleProblems,
   sendOpenTab,
   toWireContentIssues,
+  toWireQualityIssues,
   WINDOW_MESSAGE
 } from "~lib/messaging"
 import type { RequestListItem } from "~lib/request-list"
@@ -48,6 +58,7 @@ import {
 import { createContentResultsPanel } from "~lib/ui/content-results-panel"
 import { createFontCheckResultsPanel } from "~lib/ui/font-results-panel"
 import { createPanelMount } from "~lib/ui/panel-mount"
+import { createQualityResultsPanel } from "~lib/ui/quality-results-panel"
 import { updateRequestPanel, updateSnapshotRow } from "~lib/ui/request-panel"
 import {
   applyStandaloneBadgeLayout,
@@ -56,6 +67,7 @@ import {
 } from "~lib/ui/standalone-badge"
 import { getDarkTheme } from "~lib/ui/theme"
 import { hasNetworkAlerts } from "~lib/usage-display"
+import { detectBannerBounds } from "~lib/utils/banner-bounds"
 import { formatBytes } from "~lib/utils/formatters"
 
 export const config: PlasmoCSConfig = {
@@ -84,6 +96,8 @@ let badge: StandaloneBadge | null = null
 let isRequestListHoverActive = false
 let lastStatsPostAt = 0
 let latestRequestItems: RequestListItem[] = []
+/** Standalone: the tab is the creative, so the tab-wide console data is accurate. */
+let latestConsoleProblems: ConsoleProblem[] = []
 let latestTotals: Totals = createEmptyTotals()
 let legacyTotals: Totals = createEmptyTotals()
 let enhancedTotals: Totals = createEmptyTotals()
@@ -94,6 +108,7 @@ const savedSnapshotsByUrl = new Map<string, Totals & { capturedAt: number }>()
 const fontPanelMount = createPanelMount()
 const accessibilityPanelMount = createPanelMount()
 const contentPanelMount = createPanelMount()
+const qualityPanelMount = createPanelMount()
 let checks: CheckOutcomes = {}
 
 const getEffectiveAuditUrl = (): string =>
@@ -149,6 +164,8 @@ const renderRequestList = () => {
     enabled: settings.requestListEnabled,
     focusOffenders: settings.focusOffendersEnabled,
     hoverActive: isRequestListHoverActive,
+    consoleProblems: latestConsoleProblems,
+    consoleTabWide: false,
     items: latestRequestItems,
     limitBytes: settings.limitBytes,
     waterfallEnabled: settings.waterfallEnabled
@@ -157,7 +174,12 @@ const renderRequestList = () => {
 
 const refreshStatusIndicators = () => {
   if (badge) {
-    updateStatusIndicators(badge.indicators, latestRequestItems, checks)
+    updateStatusIndicators(
+      badge.indicators,
+      latestRequestItems,
+      checks,
+      latestConsoleProblems
+    )
   }
 }
 
@@ -177,6 +199,23 @@ const handleCheckContent = () => {
       onClose: clearContentCheck,
       onSelect: focusContentIssue
     })
+  )
+}
+
+const handleCheckQuality = () => {
+  // Drop the previous panel first so it cannot cover the hit-test grid.
+  qualityPanelMount.current?.remove()
+  // Standalone: the window is bigger than the banner, so measure the banner.
+  const result = runQualityCheck(detectBannerBounds())
+  checks = { ...checks, quality: qualityOutcome(result.issues) }
+  refreshStatusIndicators()
+  qualityPanelMount.show(
+    createQualityResultsPanel(
+      toWireQualityIssues(result.issues),
+      result.coveragePercent,
+      getDarkTheme(),
+      { onClose: clearQualityCheck, onSelect: focusQualityIssue }
+    )
   )
 }
 
@@ -210,6 +249,7 @@ const ensureBadge = () => {
     next.fontsButton.addEventListener("click", handleCheckFonts)
     next.accessibilityButton.addEventListener("click", handleCheckAccessibility)
     next.contentButton.addEventListener("click", handleCheckContent)
+    next.qualityButton.addEventListener("click", handleCheckQuality)
     next.badge.addEventListener("mouseenter", () => {
       isRequestListHoverActive = true
       renderRequestList()
@@ -228,6 +268,9 @@ const ensureBadge = () => {
   badge.contentButton.style.display = settings.contentCheckEnabled
     ? "flex"
     : "none"
+  badge.qualityButton.style.display = settings.qualityCheckEnabled
+    ? "flex"
+    : "none"
 }
 
 const removeBadge = () => {
@@ -235,6 +278,7 @@ const removeBadge = () => {
   badge = null
   isRequestListHoverActive = false
   latestRequestItems = []
+  latestConsoleProblems = []
   latestTotals = createEmptyTotals()
 }
 
@@ -277,6 +321,7 @@ const postStatsToTop = (totals: Totals) => {
 
   postToParent({
     payload: {
+      consoleProblems: latestConsoleProblems,
       requestCount: totals.requests,
       requestCountText: `${totals.requests} req`,
       requestItems: totals.requestItems,
@@ -349,6 +394,7 @@ const requestEnhancedTotalsOnce = () => {
   enhancedRequestInFlight = true
   requestEnhancedStats(getEffectiveAuditUrl(), (response) => {
     enhancedRequestInFlight = false
+    latestConsoleProblems = sanitizeConsoleProblems(response?.consoleProblems)
     const result = interpretEnhancedStats(response, isIframeContext)
 
     if (result.kind === "unavailable") {

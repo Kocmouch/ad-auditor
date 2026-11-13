@@ -176,4 +176,59 @@ describe("checkClickability", () => {
     expect(r.summary.warnings).toBe(59)
     expect(r.summary.truncated).toBe(true)
   })
+
+  test("bounds restrict the coverage grid and are clamped to the viewport", () => {
+    document.body.innerHTML =
+      '<div id="c" onclick="x()"></div><div id="bg"></div>'
+    const points: [number, number][] = []
+    const bounds = { left: 100, top: 50, width: 120, height: 100 }
+    const r = checkClickability(document, {
+      viewport: { width: 1000, height: 800 },
+      bounds,
+      measure: () => ({ width: 120, height: 100 }),
+      hitTest: (x, y) => {
+        points.push([x, y])
+        return byId("c")
+      }
+    })
+    expect(r.coverage).toEqual({ percent: 100, sampled: 120, covered: 120 })
+    expect(
+      points
+        .slice(0, 120)
+        .every(([x, y]) => x > 100 && x < 220 && y > 50 && y < 150)
+    ).toBe(true)
+
+    const clamped = checkClickability(document, {
+      viewport: { width: 300, height: 250 },
+      bounds: { left: 200, top: 200, width: 500, height: 500 },
+      measure: () => ({ width: 40, height: 40, left: 220, top: 205 }),
+      hitTest: (x, y) => {
+        expect(x > 200 && x < 300 && y > 200 && y < 250).toBe(true)
+        return byId("bg")
+      }
+    })
+    expect(clamped.coverage.covered).toBe(0)
+  })
+
+  test("whole-banner exemption is relative to bounds, not viewport", () => {
+    document.body.innerHTML = '<div id="all" data-clicktag="x"></div>'
+    const opts = {
+      viewport: { width: 1000, height: 800 },
+      measure: () => ({ width: 300, height: 20 }),
+      hitTest: () => byId("all")
+    }
+    // 300x20 is tiny vs the viewport, so height 20 is flagged.
+    expect(
+      checkClickability(document, opts).issues.some(
+        (i) => i.kind === "small-target"
+      )
+    ).toBe(true)
+    // Against a 300x60 banner it spans over 25% of the area: exempt.
+    expect(
+      checkClickability(document, {
+        ...opts,
+        bounds: { left: 0, top: 0, width: 300, height: 60 }
+      }).issues.some((i) => i.kind === "small-target")
+    ).toBe(false)
+  })
 })

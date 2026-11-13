@@ -1,11 +1,13 @@
 import { checkImagesInDocument } from "~lib/features/image-checker"
 import { checkLinksInDocument } from "~lib/features/link-checker"
+import { checkTemplateLeaks } from "~lib/features/template-leak-checker"
 import { addHighlight, clearHighlights } from "~lib/ui/highlight"
 
 export const IMAGES_GROUP = "images"
 export const LINKS_GROUP = "links"
+export const TEMPLATE_GROUP = "template"
 
-export type ContentCategory = "images" | "links"
+export type ContentCategory = "images" | "links" | "template"
 export type ContentSeverity = "error" | "warning" | "info"
 
 export type ContentIssue = {
@@ -17,9 +19,16 @@ export type ContentIssue = {
   element?: HTMLElement
 }
 
+export type IssueSummary = {
+  total: number
+  errors: number
+  warnings: number
+  infos: number
+}
+
 export type ContentCheckResult = {
   issues: ContentIssue[]
-  summary: { total: number; errors: number; warnings: number; infos: number }
+  summary: IssueSummary
 }
 
 const MAX_LABEL_LENGTH = 40
@@ -29,57 +38,82 @@ export const shortLabel = (message: string): string =>
     ? `${message.slice(0, MAX_LABEL_LENGTH - 1)}…`
     : message
 
-export const clearContentHighlights = () => {
-  clearHighlights(IMAGES_GROUP)
-  clearHighlights(LINKS_GROUP)
+/** Draws a severity highlight for every issue that has an element. */
+export const highlightIssues = <
+  T extends {
+    element?: HTMLElement
+    message: string
+    severity: ContentSeverity
+  }
+>(
+  issues: T[],
+  groupOf: (issue: T) => string
+) => {
+  for (const issue of issues) {
+    if (issue.element) {
+      addHighlight(issue.element, {
+        group: groupOf(issue),
+        label: shortLabel(issue.message),
+        severity: issue.severity
+      })
+    }
+  }
 }
 
-/** Runs the image and link checkers and highlights the offending elements. */
+export const summarizeIssues = (
+  issues: ReadonlyArray<{ severity: ContentSeverity }>
+): IssueSummary => {
+  const count = (severity: ContentSeverity) =>
+    issues.filter((issue) => issue.severity === severity).length
+  return {
+    errors: count("error"),
+    infos: count("info"),
+    total: issues.length,
+    warnings: count("warning")
+  }
+}
+
+const GROUPS: Record<ContentCategory, string> = {
+  images: IMAGES_GROUP,
+  links: LINKS_GROUP,
+  template: TEMPLATE_GROUP
+}
+
+export const clearContentHighlights = () => {
+  for (const group of Object.values(GROUPS)) {
+    clearHighlights(group)
+  }
+}
+
+type RawIssue = {
+  element?: HTMLElement
+  kind: string
+  message: string
+  severity: ContentSeverity
+}
+
+const tag =
+  (category: ContentCategory) =>
+  ({ element, kind, message, severity }: RawIssue): ContentIssue => ({
+    category,
+    element,
+    kind,
+    message,
+    severity
+  })
+
+/** Runs the image, link and template-leak checkers and highlights elements. */
 export const runContentChecks = (
   doc: Document = document
 ): ContentCheckResult => {
   clearContentHighlights()
 
   const issues: ContentIssue[] = [
-    ...checkImagesInDocument(doc).issues.map(
-      ({ element, kind, message, severity }): ContentIssue => ({
-        category: "images",
-        element,
-        kind,
-        message,
-        severity
-      })
-    ),
-    ...checkLinksInDocument(doc).issues.map(
-      ({ element, kind, message, severity }): ContentIssue => ({
-        category: "links",
-        element,
-        kind,
-        message,
-        severity
-      })
-    )
+    ...checkImagesInDocument(doc).issues.map(tag("images")),
+    ...checkLinksInDocument(doc).issues.map(tag("links")),
+    ...checkTemplateLeaks(doc).issues.map(tag("template"))
   ]
 
-  for (const issue of issues) {
-    if (issue.element) {
-      addHighlight(issue.element, {
-        group: issue.category === "images" ? IMAGES_GROUP : LINKS_GROUP,
-        label: shortLabel(issue.message),
-        severity: issue.severity
-      })
-    }
-  }
-
-  const count = (severity: ContentSeverity) =>
-    issues.filter((issue) => issue.severity === severity).length
-  return {
-    issues,
-    summary: {
-      errors: count("error"),
-      infos: count("info"),
-      total: issues.length,
-      warnings: count("warning")
-    }
-  }
+  highlightIssues(issues, (issue) => GROUPS[issue.category])
+  return { issues, summary: summarizeIssues(issues) }
 }

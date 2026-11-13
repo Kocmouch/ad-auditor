@@ -12,6 +12,7 @@ export type ContentSettings = {
   limitBytes: number
   limitMetric: LimitMetric
   measurementMethod: MeasurementMethod
+  qualityCheckEnabled: boolean
   requestListEnabled: boolean
   snapshotsEnabled: boolean
   standaloneAmsPreviewBadgeEnabled: boolean
@@ -26,9 +27,11 @@ export const getDefaultContentSettings = (): ContentSettings => ({
   limitBytes: DEFAULTS.LIMIT_BYTES,
   limitMetric: DEFAULTS.LIMIT_METRIC,
   measurementMethod: DEFAULTS.MEASUREMENT_METHOD,
+  qualityCheckEnabled: DEFAULTS.ENABLE_QUALITY_CHECK,
   requestListEnabled: DEFAULTS.SHOW_REQUEST_LIST,
   snapshotsEnabled: DEFAULTS.ENABLE_SNAPSHOTS,
-  standaloneAmsPreviewBadgeEnabled: DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED,
+  standaloneAmsPreviewBadgeEnabled:
+    DEFAULTS.STANDALONE_AMS_PREVIEW_BADGE_ENABLED,
   waterfallEnabled: DEFAULTS.SHOW_WATERFALL
 })
 
@@ -40,13 +43,16 @@ const FIELD_KEYS: Record<keyof ContentSettings, string> = {
   limitBytes: STORAGE_KEYS.LIMIT_BYTES,
   limitMetric: STORAGE_KEYS.LIMIT_METRIC,
   measurementMethod: STORAGE_KEYS.MEASUREMENT_METHOD,
+  qualityCheckEnabled: STORAGE_KEYS.ENABLE_QUALITY_CHECK,
   requestListEnabled: STORAGE_KEYS.SHOW_REQUEST_LIST,
   snapshotsEnabled: STORAGE_KEYS.ENABLE_SNAPSHOTS,
   standaloneAmsPreviewBadgeEnabled: STORAGE_KEYS.STANDALONE_AMS_PREVIEW_BADGE,
   waterfallEnabled: STORAGE_KEYS.SHOW_WATERFALL
 }
 
-const FIELD_PARSERS: { [K in keyof ContentSettings]: (v: unknown) => ContentSettings[K] } = {
+const FIELD_PARSERS: {
+  [K in keyof ContentSettings]: (v: unknown) => ContentSettings[K]
+} = {
   alertsEnabled: parsers.showAlerts,
   auditAllEnabled: parsers.enableAuditAll,
   contentCheckEnabled: parsers.enableContentCheck,
@@ -54,6 +60,7 @@ const FIELD_PARSERS: { [K in keyof ContentSettings]: (v: unknown) => ContentSett
   limitBytes: parsers.limitBytes,
   limitMetric: parsers.limitMetric,
   measurementMethod: parsers.measurementMethod,
+  qualityCheckEnabled: parsers.enableQualityCheck,
   requestListEnabled: parsers.showRequestList,
   snapshotsEnabled: parsers.enableSnapshots,
   standaloneAmsPreviewBadgeEnabled: parsers.standaloneAmsPreviewBadgeEnabled,

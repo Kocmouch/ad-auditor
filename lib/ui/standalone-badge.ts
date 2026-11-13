@@ -1,7 +1,7 @@
 import {
+  attachStatusTooltips,
   BADGE_FONT_FAMILY,
   createAlertsContainer,
-  attachStatusTooltips,
   createStatsValues,
   createStatusIndicators,
   createToolbarButton,
@@ -13,6 +13,7 @@ import {
   type RequestPanel,
   type RequestPanelHandlers
 } from "~lib/ui/request-panel"
+import { Z_INDEX } from "~lib/ui/theme"
 
 export const STANDALONE_BADGE_ID = "ad-auditor-badge"
 
@@ -27,6 +28,7 @@ export type StandaloneBadge = {
   indicators: StatusIndicators
   openButton: HTMLButtonElement
   panel: RequestPanel
+  qualityButton: HTMLButtonElement
   values: StatsValues
 }
 
@@ -52,7 +54,7 @@ export const createStandaloneBadge = (
       `font-family: ${BADGE_FONT_FAMILY}`,
       "font-size: 11px",
       "line-height: 1.2",
-      "z-index: 2147483647",
+      `z-index: ${Z_INDEX.badge}`,
       "transition: opacity 120ms linear"
     ].join(";")
   )
@@ -98,6 +100,13 @@ export const createStandaloneBadge = (
     tooltip: "Check images & links"
   })
 
+  const qualityButton = createToolbarButton({
+    icon: "quality",
+    marginLeft: "4px",
+    raised: true,
+    tooltip: "Check structure, clickability & animations"
+  })
+
   const alerts = createAlertsContainer(true)
 
   const buttons = document.createElement("div")
@@ -105,7 +114,7 @@ export const createStandaloneBadge = (
     "style",
     ["display: flex", "gap: 4px", "margin-left: auto"].join(";")
   )
-  buttons.append(fontsButton, accessibilityButton, contentButton)
+  buttons.append(fontsButton, accessibilityButton, contentButton, qualityButton)
 
   badge.append(stats, buttons, openButton, panel.container, alerts)
 
@@ -119,6 +128,7 @@ export const createStandaloneBadge = (
     indicators,
     openButton,
     panel,
+    qualityButton,
     values
   }
 }

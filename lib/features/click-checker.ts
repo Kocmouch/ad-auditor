@@ -42,6 +42,12 @@ export type ClickCheckOptions = {
   hitTest?: (x: number, y: number) => Element | null
   /** Override the viewport size; defaults to the document's window size. */
   viewport?: { width: number; height: number }
+  /**
+   * Banner rectangle in viewport coordinates. When given, coverage is sampled
+   * over it (clamped to the viewport) and the whole-banner exemption is
+   * relative to its area. Defaults to the whole viewport.
+   */
+  bounds?: { left: number; top: number; width: number; height: number }
 }
 
 export const MAX_CLICK_ISSUES = 50
@@ -157,7 +163,20 @@ export const checkClickability = (
   const hitTest =
     options.hitTest ?? ((x: number, y: number) => doc.elementFromPoint(x, y))
   const viewport = getViewport(doc, options)
-  const viewportArea = viewport.width * viewport.height
+  const b = options.bounds
+  const left = b ? Math.max(0, b.left) : 0
+  const top0 = b ? Math.max(0, b.top) : 0
+  const area = {
+    left,
+    top: top0,
+    width: b
+      ? Math.max(0, Math.min(b.left + b.width, viewport.width) - left)
+      : viewport.width,
+    height: b
+      ? Math.max(0, Math.min(b.top + b.height, viewport.height) - top0)
+      : viewport.height
+  }
+  const viewportArea = area.width * area.height
   const issues: ClickIssue[] = []
 
   // Visible clickable roots with their measured size.
@@ -203,11 +222,11 @@ export const checkClickability = (
   // 2. Click coverage over a grid of viewport points.
   let sampled = 0
   let covered = 0
-  if (viewport.width > 0 && viewport.height > 0) {
+  if (area.width > 0 && area.height > 0) {
     for (let row = 0; row < GRID_ROWS; row++) {
       for (let col = 0; col < GRID_COLUMNS; col++) {
-        const x = ((col + 0.5) / GRID_COLUMNS) * viewport.width
-        const y = ((row + 0.5) / GRID_ROWS) * viewport.height
+        const x = area.left + ((col + 0.5) / GRID_COLUMNS) * area.width
+        const y = area.top + ((row + 0.5) / GRID_ROWS) * area.height
         sampled++
         const hit = hitTest(x, y)
         if (hit && isInClickable(hit, doc)) covered++

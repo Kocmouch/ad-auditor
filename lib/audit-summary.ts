@@ -2,7 +2,13 @@
  * Pure aggregation of per-check results into one status for a creative.
  * A check that has not run is simply absent from `CheckOutcomes`.
  */
-export type CheckName = "fonts" | "accessibility" | "content" | "requests"
+export type CheckName =
+  | "fonts"
+  | "accessibility"
+  | "content"
+  | "quality"
+  | "requests"
+  | "console"
 
 export type CheckSeverity = "ok" | "info" | "warning" | "error"
 
@@ -17,7 +23,9 @@ export const CHECK_NAMES: readonly CheckName[] = [
   "fonts",
   "accessibility",
   "content",
-  "requests"
+  "quality",
+  "requests",
+  "console"
 ]
 
 const RANK: Record<CheckSeverity, number> = {
@@ -81,6 +89,13 @@ export const contentOutcome = (
   issues: ReadonlyArray<{ severity: CheckSeverity }>
 ): CheckOutcome => outcomeFromSeverities(issues.map((issue) => issue.severity))
 
+export const qualityOutcome = contentOutcome
+
+/** Console problems (already filtered) by their own severity. */
+export const consoleOutcome = (
+  problems: ReadonlyArray<{ severity: CheckSeverity }>
+): CheckOutcome => outcomeFromSeverities(problems.map((p) => p.severity))
+
 export const requestOutcome = (summary: {
   total: number
   errors: number
@@ -90,14 +105,22 @@ export const requestOutcome = (summary: {
 })
 
 /**
- * Adds the request-problems outcome, but only once some other check has run
- * (the status dot is hidden until the user audits the creative).
+ * Adds the live request-problems (and console) outcomes, but only once some
+ * other check has run (the status dot is hidden until the user audits the
+ * creative).
  */
 export const withRequestOutcome = (
   checks: CheckOutcomes,
-  requests: CheckOutcome
+  requests: CheckOutcome,
+  consoleResult?: CheckOutcome
 ): CheckOutcomes =>
-  Object.keys(checks).length === 0 ? checks : { ...checks, requests }
+  Object.keys(checks).length === 0
+    ? checks
+    : {
+        ...checks,
+        requests,
+        ...(consoleResult ? { console: consoleResult } : {})
+      }
 
 export const getOverallStatus = (checks: CheckOutcomes): OverallStatus => {
   const outcomes = CHECK_NAMES.map((name) => checks[name]).filter(

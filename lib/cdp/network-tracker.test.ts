@@ -18,6 +18,7 @@ const createSession = (): TabSession => ({
   attachPromise: null,
   attached: true,
   childSessionIds: new Set(),
+  consoleProblems: [],
   isTopNavigationInProgress: false,
   lastNavigationUrl: "",
   requestKeyByRequestId: new Map(),

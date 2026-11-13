@@ -12,7 +12,8 @@ export const STORAGE_KEYS = {
   SHOW_ALERTS: "adAuditorShowAlerts",
   SHOW_REQUEST_LIST: "adAuditorShowRequestList",
   ENABLE_CONTENT_CHECK: "adAuditorEnableContentCheck",
+  ENABLE_QUALITY_CHECK: "adAuditorEnableQualityCheck",
   ENABLE_AUDIT_ALL: "adAuditorEnableAuditAll"
 } as const
 
-export const CURRENT_SETTINGS_VERSION = 5
+export const CURRENT_SETTINGS_VERSION = 6

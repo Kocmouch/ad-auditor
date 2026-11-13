@@ -40,6 +40,7 @@ import {
   isCheckSeverity,
   type CheckOutcomes
 } from "~lib/audit-summary"
+import type { ConsoleProblem } from "~lib/cdp/types"
 import type { BorderIssue } from "~lib/features/border-checker"
 import type {
   ContentCategory,
@@ -48,6 +49,10 @@ import type {
 } from "~lib/features/content-checker"
 import type { FontMismatch } from "~lib/features/font-checker"
 import type { OptOutIssue } from "~lib/features/optout-checker"
+import type {
+  QualityCategory,
+  QualityIssue
+} from "~lib/features/quality-checker"
 import type { RequestRecord } from "~lib/features/request-errors"
 
 export const MESSAGE_SOURCE = "ad-auditor"
@@ -78,6 +83,14 @@ export const WINDOW_MESSAGE = {
   CLEAR_CONTENT_HIGHLIGHTS: "ad-auditor-clear-content-highlights",
   /** host -> iframe: scroll to and flash the highlight of one content issue. */
   FOCUS_CONTENT_ISSUE: "ad-auditor-focus-content-issue",
+  /** host -> iframe: run the structure + clickability + animation ("quality") checks. */
+  CHECK_QUALITY_REQUEST: "ad-auditor-check-quality-request",
+  /** iframe -> parent: quality check result. */
+  CHECK_QUALITY_RESPONSE: "ad-auditor-check-quality-response",
+  /** host -> iframe: remove quality highlights. */
+  CLEAR_QUALITY_HIGHLIGHTS: "ad-auditor-clear-quality-highlights",
+  /** host -> iframe: scroll to and flash the highlight of one quality issue. */
+  FOCUS_QUALITY_ISSUE: "ad-auditor-focus-quality-issue",
   /** host -> iframe: run every check ("Audit all"). */
   AUDIT_REQUEST: "ad-auditor-audit-request",
   /** iframe -> parent: worst severity per check for "Audit all". */
@@ -95,6 +108,8 @@ export type StatsPayload = {
   requestCount: number
   requestCountText: string
   requestItems: RequestRecord[]
+  /** Tab-wide console problems (CDP only); empty otherwise. */
+  consoleProblems: ConsoleProblem[]
   resources: number
   resourcesText: string
   transferred: number
@@ -118,10 +133,21 @@ export type WireContentIssue = {
   kind: string
   severity: ContentSeverity
   message: string
+  /** True when the issue points at an element (rows are then clickable). */
+  hasElement?: true
+}
+
+/** Quality issue as sent over the wire (no DOM element; focus uses the index). */
+export type WireQualityIssue = Omit<WireContentIssue, "category"> & {
+  category: QualityCategory
 }
 
 export type WindowMessage =
-  | { type: typeof WINDOW_MESSAGE.STATS; source: typeof MESSAGE_SOURCE; payload: StatsPayload }
+  | {
+      type: typeof WINDOW_MESSAGE.STATS
+      source: typeof MESSAGE_SOURCE
+      payload: StatsPayload
+    }
   | { type: typeof WINDOW_MESSAGE.CHECK_FONTS_REQUEST }
   | {
       type: typeof WINDOW_MESSAGE.CHECK_FONTS_RESPONSE
@@ -151,6 +177,16 @@ export type WindowMessage =
     }
   | { type: typeof WINDOW_MESSAGE.CLEAR_CONTENT_HIGHLIGHTS }
   | { type: typeof WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE; index: number }
+  | { type: typeof WINDOW_MESSAGE.CHECK_QUALITY_REQUEST }
+  | {
+      type: typeof WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE
+      issues: WireQualityIssue[]
+      /** Clickable share of the banner (0-100), null when unknown. */
+      coveragePercent: number | null
+      iframeUrl: string
+    }
+  | { type: typeof WINDOW_MESSAGE.CLEAR_QUALITY_HIGHLIGHTS }
+  | { type: typeof WINDOW_MESSAGE.FOCUS_QUALITY_ISSUE; index: number }
   | { type: typeof WINDOW_MESSAGE.AUDIT_REQUEST }
   | {
       type: typeof WINDOW_MESSAGE.AUDIT_RESPONSE
@@ -165,6 +201,7 @@ export type EnhancedStatsResponse = {
   trackedRequests?: number
   tabTrackedRequests?: number
   requestDetails?: unknown
+  consoleProblems?: unknown
   tabRequestDetails?: unknown
   resources?: number
   tabResources?: number
@@ -182,7 +219,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const toCount = (value: unknown): number => Math.max(0, Number(value) || 0)
 
-const toStr = (value: unknown): string => (typeof value === "string" ? value : "")
+const toStr = (value: unknown): string =>
+  typeof value === "string" ? value : ""
 
 export const sanitizeRequestItems = (value: unknown): RequestRecord[] => {
   if (!Array.isArray(value)) {
@@ -256,7 +294,59 @@ export const sanitizeFontMismatches = (value: unknown): WireFontMismatch[] => {
   return result
 }
 
-const CONTENT_CATEGORIES: readonly ContentCategory[] = ["images", "links"]
+const CONSOLE_KINDS: readonly ConsoleProblem["kind"][] = [
+  "exception",
+  "console-error",
+  "console-warning",
+  "log-error",
+  "log-warning",
+  "issue"
+]
+const CONSOLE_SEVERITIES: readonly ConsoleProblem["severity"][] = [
+  "error",
+  "warning",
+  "info"
+]
+
+export const sanitizeConsoleProblems = (value: unknown): ConsoleProblem[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const result: ConsoleProblem[] = []
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      !CONSOLE_KINDS.includes(entry.kind as ConsoleProblem["kind"]) ||
+      !CONSOLE_SEVERITIES.includes(entry.severity as ConsoleProblem["severity"])
+    ) {
+      continue
+    }
+
+    const problem: ConsoleProblem = {
+      count: Math.max(1, Math.floor(toCount(entry.count))),
+      kind: entry.kind as ConsoleProblem["kind"],
+      message: toStr(entry.message),
+      severity: entry.severity as ConsoleProblem["severity"],
+      timestamp: toCount(entry.timestamp)
+    }
+    if (typeof entry.url === "string" && entry.url) {
+      problem.url = entry.url
+    }
+    if (typeof entry.line === "number" && entry.line > 0) {
+      problem.line = Math.floor(entry.line)
+    }
+    result.push(problem)
+  }
+
+  return result
+}
+
+const CONTENT_CATEGORIES: readonly ContentCategory[] = [
+  "images",
+  "links",
+  "template"
+]
 const CONTENT_SEVERITIES: readonly ContentSeverity[] = [
   "error",
   "warning",
@@ -282,7 +372,41 @@ export const sanitizeContentIssues = (value: unknown): WireContentIssue[] => {
       category: entry.category as ContentCategory,
       kind: toStr(entry.kind),
       message: toStr(entry.message),
-      severity: entry.severity as ContentSeverity
+      severity: entry.severity as ContentSeverity,
+      ...(entry.hasElement === true ? { hasElement: true as const } : {})
+    })
+  }
+
+  return result
+}
+
+const QUALITY_CATEGORIES: readonly QualityCategory[] = [
+  "structure",
+  "clicks",
+  "animations"
+]
+
+export const sanitizeQualityIssues = (value: unknown): WireQualityIssue[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const result: WireQualityIssue[] = []
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      !QUALITY_CATEGORIES.includes(entry.category as QualityCategory) ||
+      !CONTENT_SEVERITIES.includes(entry.severity as ContentSeverity)
+    ) {
+      continue
+    }
+
+    result.push({
+      category: entry.category as QualityCategory,
+      kind: toStr(entry.kind),
+      message: toStr(entry.message),
+      severity: entry.severity as ContentSeverity,
+      ...(entry.hasElement === true ? { hasElement: true as const } : {})
     })
   }
 
@@ -318,11 +442,24 @@ export const toWireIssues = <T extends { htmlElement?: HTMLElement }>(
 export const toWireContentIssues = (
   issues: ContentIssue[]
 ): WireContentIssue[] =>
-  issues.map(({ category, kind, message, severity }) => ({
+  issues.map(({ category, element, kind, message, severity }) => ({
     category,
     kind,
     message,
-    severity
+    severity,
+    ...(element ? { hasElement: true as const } : {})
+  }))
+
+/** Strip the non-cloneable `element` reference from quality issues. */
+export const toWireQualityIssues = (
+  issues: QualityIssue[]
+): WireQualityIssue[] =>
+  issues.map(({ category, element, kind, message, severity }) => ({
+    category,
+    kind,
+    message,
+    severity,
+    ...(element ? { hasElement: true as const } : {})
   }))
 
 /** Strip non-cloneable fields (DOM element references) before posting. */
@@ -354,6 +491,7 @@ export const parseWindowMessage = (data: unknown): WindowMessage | null => {
       const requestCount = toCount(payload.requestCount)
       return {
         payload: {
+          consoleProblems: sanitizeConsoleProblems(payload.consoleProblems),
           requestCount,
           requestCountText:
             toStr(payload.requestCountText) || `${requestCount} req`,
@@ -371,6 +509,8 @@ export const parseWindowMessage = (data: unknown): WindowMessage | null => {
     case WINDOW_MESSAGE.CHECK_FONTS_REQUEST:
     case WINDOW_MESSAGE.CHECK_ACCESSIBILITY_REQUEST:
     case WINDOW_MESSAGE.CHECK_CONTENT_REQUEST:
+    case WINDOW_MESSAGE.CHECK_QUALITY_REQUEST:
+    case WINDOW_MESSAGE.CLEAR_QUALITY_HIGHLIGHTS:
     case WINDOW_MESSAGE.AUDIT_REQUEST:
     case WINDOW_MESSAGE.CLEAR_FONT_HIGHLIGHTS:
     case WINDOW_MESSAGE.CLEAR_ACCESSIBILITY_HIGHLIGHTS:
@@ -385,6 +525,22 @@ export const parseWindowMessage = (data: unknown): WindowMessage | null => {
         issues: sanitizeContentIssues(data.issues),
         type: data.type
       }
+    case WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE: {
+      if (!Array.isArray(data.issues)) {
+        return null
+      }
+      const coverage = data.coveragePercent
+      return {
+        coveragePercent:
+          typeof coverage === "number" && Number.isFinite(coverage)
+            ? Math.min(100, Math.max(0, coverage))
+            : null,
+        iframeUrl: toStr(data.iframeUrl),
+        issues: sanitizeQualityIssues(data.issues),
+        type: data.type
+      }
+    }
+    case WINDOW_MESSAGE.FOCUS_QUALITY_ISSUE:
     case WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE: {
       const index = data.index
       if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {

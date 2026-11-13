@@ -4,6 +4,8 @@
  * document.documentElement and repositioned from getBoundingClientRect.
  */
 
+import { Z_INDEX } from "~lib/ui/theme"
+
 export type HighlightSeverity = "error" | "warning" | "info"
 
 export type HighlightOptions = {
@@ -78,7 +80,7 @@ const ensureLayer = (): HTMLDivElement => {
   el.setAttribute("aria-hidden", "true")
   el.style.cssText =
     "position:fixed;top:0;left:0;width:0;height:0;overflow:visible;" +
-    "z-index:2147483647;pointer-events:none;"
+    `z-index:${Z_INDEX.highlight};pointer-events:none;`
   const style = document.createElement("style")
   style.textContent = STYLE_TEXT
   el.appendChild(style)

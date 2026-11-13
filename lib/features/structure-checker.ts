@@ -43,6 +43,13 @@ export type StructureCheckOptions = {
   measure?: (el: HTMLElement) => ElementMetrics
   /** Viewport size (defaults to the window's inner size). */
   viewport?: { width: number; height: number }
+  /**
+   * Banner rectangle (viewport coordinates) for standalone mode, where the
+   * window is not the banner size. When given, offscreen checks compare
+   * against it instead of the viewport and the document-level scrollbar
+   * check is skipped (page scroll belongs to the browser tab).
+   */
+  bounds?: { left: number; top: number; width: number; height: number }
 }
 
 export const MAX_ISSUES = 50
@@ -165,7 +172,8 @@ const checkDocumentBasics = (doc: Document, issues: StructureIssue[]) => {
   const hasCharset =
     !!doc.querySelector("meta[charset]") ||
     Array.from(doc.querySelectorAll("meta[http-equiv]")).some(
-      (m) => (m.getAttribute("http-equiv") ?? "").toLowerCase() === "content-type"
+      (m) =>
+        (m.getAttribute("http-equiv") ?? "").toLowerCase() === "content-type"
     )
   if (!hasCharset) {
     issues.push({
@@ -226,13 +234,21 @@ const checkAttributes = (doc: Document): StructureIssue[] => {
         push(el, `<${tag}> has invalid ${attr}="${value}" (expected a number)`)
       }
     }
-    if (tag === "svg" && el.hasAttribute("viewport") && !el.hasAttribute("viewBox")) {
+    if (
+      tag === "svg" &&
+      el.hasAttribute("viewport") &&
+      !el.hasAttribute("viewBox")
+    ) {
       push(
         el,
         "<svg> uses a viewport attribute, which is not valid SVG; use viewBox"
       )
     }
-    if (tag === "img" && !el.hasAttribute("src") && !el.hasAttribute("srcset")) {
+    if (
+      tag === "img" &&
+      !el.hasAttribute("src") &&
+      !el.hasAttribute("srcset")
+    ) {
       push(el, "<img> has neither src nor srcset")
     }
   })
@@ -296,7 +312,15 @@ export const checkStructure = (
   const issues: StructureIssue[] = []
   checkDocumentBasics(doc, issues)
   issues.push(...checkAttributes(doc))
-  issues.push(...checkPageOverflow(doc, win, measure))
+  if (!options.bounds) issues.push(...checkPageOverflow(doc, win, measure))
+  const area = options.bounds ?? {
+    left: 0,
+    top: 0,
+    width: viewport.width,
+    height: viewport.height
+  }
+  const areaRight = area.left + area.width
+  const areaBottom = area.top + area.height
 
   const clipped: StructureIssue[] = []
   const offscreen: StructureIssue[] = []
@@ -369,9 +393,9 @@ export const checkStructure = (
       offscreen.length < MAX_OFFSCREEN_ISSUES &&
       m.rect.width >= MIN_OFFSCREEN_SIZE_PX &&
       m.rect.height >= MIN_OFFSCREEN_SIZE_PX &&
-      viewport.width > 0 &&
-      viewport.height > 0 &&
-      (m.rect.left >= viewport.width || m.rect.top >= viewport.height)
+      area.width > 0 &&
+      area.height > 0 &&
+      (m.rect.left >= areaRight || m.rect.top >= areaBottom)
     ) {
       let ancestorReported = false
       for (let p = el.parentElement; p; p = p.parentElement) {
@@ -383,9 +407,9 @@ export const checkStructure = (
       if (!ancestorReported) {
         offscreenEls.add(el)
         const side =
-          m.rect.left >= viewport.width && m.rect.top >= viewport.height
+          m.rect.left >= areaRight && m.rect.top >= areaBottom
             ? "right and bottom"
-            : m.rect.left >= viewport.width
+            : m.rect.left >= areaRight
               ? "right"
               : "bottom"
         offscreen.push({

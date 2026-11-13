@@ -4,11 +4,13 @@ import {
   postToFrame,
   WINDOW_MESSAGE,
   type WireContentIssue,
-  type WireFontMismatch
+  type WireFontMismatch,
+  type WireQualityIssue
 } from "~lib/messaging"
 import { createAccessibilityResultsPanel } from "~lib/ui/accessibility-results-panel"
 import { createContentResultsPanel } from "~lib/ui/content-results-panel"
-import { getDarkTheme } from "~lib/ui/theme"
+import { createQualityResultsPanel } from "~lib/ui/quality-results-panel"
+import { getDarkTheme, Z_INDEX } from "~lib/ui/theme"
 
 const NEUMORPHIC_BUTTON_SHADOW =
   "4px 4px 8px rgba(15, 18, 24, 0.6), -4px -4px 8px rgba(255, 255, 255, 0.05)"
@@ -98,6 +100,7 @@ export const createHostResults = () => {
   let fontContainer: HTMLDivElement | null = null
   let accessibilityContainer: HTMLDivElement | null = null
   let contentContainer: HTMLDivElement | null = null
+  let qualityContainer: HTMLDivElement | null = null
   let highlightedIframe: HTMLIFrameElement | null = null
   let panelX = 0
   let panelY = 0
@@ -152,7 +155,7 @@ export const createHostResults = () => {
       "background:linear-gradient(145deg, #2a2f3a, #313745)",
       "border-radius:16px",
       "box-shadow:12px 12px 24px rgba(15, 18, 24, 0.8), -12px -12px 24px rgba(255, 255, 255, 0.05)",
-      "z-index:2147483647",
+      `z-index:${Z_INDEX.panel}`,
       "font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       "color:#d8dde7",
       "backdrop-filter:blur(10px)",
@@ -269,7 +272,10 @@ export const createHostResults = () => {
     borderIssues: Omit<BorderIssue, "htmlElement">[],
     iframe: HTMLIFrameElement
   ) => {
-    if (accessibilityContainer && document.body.contains(accessibilityContainer)) {
+    if (
+      accessibilityContainer &&
+      document.body.contains(accessibilityContainer)
+    ) {
       accessibilityContainer.remove()
     }
 
@@ -317,9 +323,40 @@ export const createHostResults = () => {
     document.body.appendChild(panel)
   }
 
+  const renderQualityResults = (
+    issues: WireQualityIssue[],
+    coveragePercent: number | null,
+    iframe: HTMLIFrameElement
+  ) => {
+    qualityContainer?.remove()
+    highlightIframe(iframe)
+
+    const panel = createQualityResultsPanel(
+      issues,
+      coveragePercent,
+      getDarkTheme(),
+      {
+        onClose: () => {
+          removeIframeHighlight()
+          postToFrame(iframe, {
+            type: WINDOW_MESSAGE.CLEAR_QUALITY_HIGHLIGHTS
+          })
+        },
+        onSelect: (index) =>
+          postToFrame(iframe, {
+            index,
+            type: WINDOW_MESSAGE.FOCUS_QUALITY_ISSUE
+          })
+      }
+    )
+    qualityContainer = panel
+    document.body.appendChild(panel)
+  }
+
   return {
     renderAccessibilityResults,
     renderContentResults,
-    renderFontResults
+    renderFontResults,
+    renderQualityResults
   }
 }

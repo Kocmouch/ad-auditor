@@ -1,5 +1,6 @@
 import type { BorderIssue } from "~lib/features/border-checker"
 import type { OptOutIssue } from "~lib/features/optout-checker"
+import { Z_INDEX } from "~lib/ui/theme"
 
 type Theme = {
   background: string
@@ -31,7 +32,7 @@ export const createAccessibilityResultsPanel = (
       "max-width: 600px",
       "max-height: 80vh",
       "overflow-y: auto",
-      "z-index: 999999",
+      `z-index: ${Z_INDEX.panel}`,
       `color: ${theme.text}`,
       "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
       "font-size: 13px",

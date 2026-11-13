@@ -40,11 +40,32 @@ export type RequestDetails = RequestProblemFields & {
   url: string
 }
 
+export type ConsoleProblemKind =
+  | "exception"
+  | "console-error"
+  | "console-warning"
+  | "log-error"
+  | "log-warning"
+  | "issue"
+
+export type ConsoleProblem = {
+  column?: number
+  count: number
+  frameId?: string
+  kind: ConsoleProblemKind
+  line?: number
+  message: string
+  severity: "error" | "warning" | "info"
+  timestamp: number
+  url?: string
+}
+
 export type TabSession = {
   attachError: string | null
   attachPromise: Promise<void> | null
   attached: boolean
   childSessionIds: Set<string>
+  consoleProblems: ConsoleProblem[]
   isTopNavigationInProgress: boolean
   lastNavigationUrl: string
   requestKeyByRequestId: Map<string, string>

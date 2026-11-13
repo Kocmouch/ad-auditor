@@ -56,6 +56,18 @@ describe("runContentChecks", () => {
     expect(getHighlightCount("images")).toBe(0)
   })
 
+  test("reports template leaks, highlighted in their own group", () => {
+    const heading = document.createElement("h1")
+    heading.textContent = "Hello {{ product.name }}"
+    document.body.appendChild(heading)
+    const result = runContentChecks()
+    const issue = result.issues.find((entry) => entry.category === "template")
+    expect(issue?.element).toBe(heading)
+    expect(getHighlightCount("template")).toBe(1)
+    clearContentHighlights()
+    expect(getHighlightCount("template")).toBe(0)
+  })
+
   test("reports link issues", () => {
     const anchor = document.createElement("a")
     anchor.setAttribute("href", "#")

@@ -1,37 +1,38 @@
 import type { PlasmoCSConfig } from "plasmo"
 
+import { describeCreative, type AuditReportRow } from "~lib/audit-report"
 import {
-  describeCreative,
-  type AuditReportRow
-} from "~lib/audit-report"
-import {
-  fontOutcome,
   accessibilityOutcome,
+  consoleOutcome,
   contentOutcome,
+  fontOutcome,
+  qualityOutcome,
   requestOutcome,
   type CheckOutcomes
 } from "~lib/audit-summary"
+import type { ConsoleProblem } from "~lib/cdp/types"
 import {
   getDefaultContentSettings,
   watchContentSettings,
   type ContentSettings
 } from "~lib/content-settings"
+import { filterConsoleProblems } from "~lib/features/console-problems"
+import {
+  findRequestProblems,
+  type RequestRecord
+} from "~lib/features/request-errors"
 import {
   compareSnapshot as compareSnapshotUtil,
   getSnapshotInfo,
   saveSnapshot as saveSnapshotUtil,
   type Totals
 } from "~lib/features/snapshot"
-import {
-  findRequestProblems,
-  type RequestRecord
-} from "~lib/features/request-errors"
 import { buildEnglishAlerts } from "~lib/insights"
 import {
+  findIframeBySourceWindow,
   parseWindowMessage,
   postToFrame,
   postToSelf,
-  findIframeBySourceWindow,
   rememberFrameOrigin,
   resolveSenderIframe,
   sendOpenTab,
@@ -39,23 +40,23 @@ import {
   type WireFontMismatch
 } from "~lib/messaging"
 import {
+  createAuditAllButton,
+  createAuditReportPanel
+} from "~lib/ui/audit-report-panel"
+import {
   applyUsageColors,
   renderAlertLines,
   updateStatusIndicators
 } from "~lib/ui/badge-parts"
-import {
-  createAuditAllButton,
-  createAuditReportPanel
-} from "~lib/ui/audit-report-panel"
-import { createPanelMount } from "~lib/ui/panel-mount"
-import { getDarkTheme } from "~lib/ui/theme"
 import {
   createOverlayBadge,
   insertBadgeAfterIframe,
   syncOverlayBadgeLayout,
   type OverlayBadge
 } from "~lib/ui/overlay-badge"
+import { createPanelMount } from "~lib/ui/panel-mount"
 import { updateRequestPanel, updateSnapshotRow } from "~lib/ui/request-panel"
+import { getDarkTheme } from "~lib/ui/theme"
 
 export const config: PlasmoCSConfig = {
   matches: [
@@ -72,6 +73,8 @@ const AUDIT_TIMEOUT_MS = 8000
 type BadgeState = {
   /** Outcome of each check the user has run on this creative. */
   checks: CheckOutcomes
+  /** Tab-wide (not per creative) console problems from the last stats post. */
+  consoleProblems: ConsoleProblem[]
   iframe: HTMLIFrameElement
   isRequestListHoverActive: boolean
   parts: OverlayBadge
@@ -117,6 +120,9 @@ const updateAlerts = (state: BadgeState) => {
 
 const updateRequestList = (state: BadgeState) => {
   const sourceItems = updateRequestPanel(state.parts.panel, {
+    consoleProblems: state.consoleProblems,
+    // CDP console data covers the whole tab, shared by all creatives.
+    consoleTabWide: true,
     enabled: settings.requestListEnabled,
     focusOffenders: settings.focusOffendersEnabled,
     hoverActive: state.isRequestListHoverActive,
@@ -173,7 +179,10 @@ const requestFontCheck = (
 
     rememberFrameOrigin(event.source, event.origin)
     window.removeEventListener("message", handler)
-    callback(message.fontMismatches, message.iframeUrl || iframe.src || "unknown")
+    callback(
+      message.fontMismatches,
+      message.iframeUrl || iframe.src || "unknown"
+    )
   }
 
   window.addEventListener("message", handler)
@@ -189,7 +198,8 @@ const refreshIndicators = (state: BadgeState) =>
   updateStatusIndicators(
     state.parts.indicators,
     state.requestItems,
-    state.checks
+    state.checks,
+    state.consoleProblems
   )
 
 const setCheck = <K extends keyof CheckOutcomes>(
@@ -252,7 +262,10 @@ const runAuditAll = async () => {
       const rect = state.iframe.getBoundingClientRect()
       const checks: CheckOutcomes = {
         ...(outcomes[index] ?? {}),
-        requests: requestOutcome(findRequestProblems(state.requestItems).summary)
+        console: consoleOutcome(filterConsoleProblems(state.consoleProblems)),
+        requests: requestOutcome(
+          findRequestProblems(state.requestItems).summary
+        )
       }
       state.checks = checks
       refreshIndicators(state)
@@ -340,6 +353,7 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
 
   const state: BadgeState = {
     checks: {},
+    consoleProblems: [],
     iframe,
     isRequestListHoverActive: false,
     parts,
@@ -374,7 +388,13 @@ const ensureState = (iframe: HTMLIFrameElement): BadgeState => {
   parts.contentButton.addEventListener("click", () => {
     postToFrame(iframe, { type: WINDOW_MESSAGE.CHECK_CONTENT_REQUEST })
   })
+  parts.qualityButton.addEventListener("click", () => {
+    postToFrame(iframe, { type: WINDOW_MESSAGE.CHECK_QUALITY_REQUEST })
+  })
   parts.contentButton.style.display = settings.contentCheckEnabled
+    ? "flex"
+    : "none"
+  parts.qualityButton.style.display = settings.qualityCheckEnabled
     ? "flex"
     : "none"
 
@@ -433,7 +453,8 @@ const handleCheckResponse = (event: MessageEvent) => {
   const message = parseWindowMessage(event.data)
   if (
     message?.type !== WINDOW_MESSAGE.CHECK_ACCESSIBILITY_RESPONSE &&
-    message?.type !== WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE
+    message?.type !== WINDOW_MESSAGE.CHECK_CONTENT_RESPONSE &&
+    message?.type !== WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE
   ) {
     return
   }
@@ -449,13 +470,15 @@ const handleCheckResponse = (event: MessageEvent) => {
     return
   }
 
+  if (message.type === WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE) {
+    setCheck(state, "quality", qualityOutcome(message.issues))
+    return
+  }
+
   setCheck(
     state,
     "accessibility",
-    accessibilityOutcome(
-      message.optOutIssues,
-      message.borderIssues
-    )
+    accessibilityOutcome(message.optOutIssues, message.borderIssues)
   )
 }
 
@@ -476,6 +499,7 @@ const handleWindowMessage = (event: MessageEvent) => {
   state.url = payload.url
   state.requestCount = payload.requestCount
   state.requestItems = payload.requestItems
+  state.consoleProblems = payload.consoleProblems
   state.transferred = payload.transferred
   state.resources = payload.resources
   state.parts.values.transferred.textContent = payload.transferredText
@@ -492,6 +516,9 @@ const applySettings = (next: ContentSettings) => {
   syncAuditAllButton()
   for (const [iframe, state] of states) {
     state.parts.contentButton.style.display = settings.contentCheckEnabled
+      ? "flex"
+      : "none"
+    state.parts.qualityButton.style.display = settings.qualityCheckEnabled
       ? "flex"
       : "none"
     applyColors(state)

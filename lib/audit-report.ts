@@ -17,8 +17,10 @@ export type AuditReportRow = {
 
 export const CHECK_LABELS: Record<CheckName, string> = {
   accessibility: "Accessibility",
+  console: "Console",
   content: "Content",
   fonts: "Fonts",
+  quality: "Quality",
   requests: "Requests"
 }
 

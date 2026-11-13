@@ -7,7 +7,7 @@ import {
 } from "~lib/audit-report"
 import { CHECK_NAMES, type CheckSeverity } from "~lib/audit-summary"
 import { SEVERITY_COLORS } from "~lib/ui/highlight"
-import type { Theme } from "~lib/ui/theme"
+import { Z_INDEX, type Theme } from "~lib/ui/theme"
 
 export type AuditReportPanelOptions = {
   pageUrl?: string
@@ -60,7 +60,7 @@ export const createAuditAllButton = (): HTMLButtonElement => {
       "position: fixed",
       "left: 12px",
       "bottom: 12px",
-      "z-index: 2147483645",
+      `z-index: ${Z_INDEX.auditAllButton}`,
       "border: 1px solid #7dff6a",
       "background: rgba(0, 0, 0, 0.85)",
       "color: #7dff6a",
@@ -79,15 +79,30 @@ export const createAuditReportPanel = (
   theme: Theme,
   options: AuditReportPanelOptions = {}
 ): HTMLDivElement => {
-  const panel = document.createElement("div")
-  panel.id = "ad-auditor-audit-report"
-  panel.setAttribute(
+  // Full-viewport backdrop so nothing on the page shows through or is clickable.
+  const backdrop = document.createElement("div")
+  backdrop.id = "ad-auditor-audit-report"
+  backdrop.setAttribute(
     "style",
     [
       "position: fixed",
-      "top: 50%",
-      "left: 50%",
-      "transform: translate(-50%, -50%)",
+      "top: 0",
+      "right: 0",
+      "bottom: 0",
+      "left: 0",
+      "display: flex",
+      "align-items: center",
+      "justify-content: center",
+      "background: rgba(0, 0, 0, 0.55)",
+      `z-index: ${Z_INDEX.modalBackdrop}`
+    ].join(";")
+  )
+  const panel = document.createElement("div")
+  backdrop.appendChild(panel)
+  panel.setAttribute(
+    "style",
+    [
+      "position: relative",
       `background: ${theme.background}`,
       "border-radius: 8px",
       `box-shadow: 0 8px 32px ${theme.shadowDark}, inset 0 1px 0 ${theme.shadowLight}`,
@@ -96,7 +111,7 @@ export const createAuditReportPanel = (
       "max-height: 80vh",
       "overflow: auto",
       "box-sizing: border-box",
-      "z-index: 2147483646",
+      `z-index: ${Z_INDEX.modal}`,
       `color: ${theme.text}`,
       "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
       "font-size: 13px",
@@ -147,7 +162,7 @@ export const createAuditReportPanel = (
     `background:transparent;border:none;color:${theme.textMuted};font-size:20px;cursor:pointer;padding:0 4px`
   )
   closeButton.addEventListener("click", () => {
-    panel.remove()
+    backdrop.remove()
     options.onClose?.()
   })
   actions.append(copyButton, closeButton)
@@ -159,7 +174,7 @@ export const createAuditReportPanel = (
     empty.textContent = "No creatives were audited."
     empty.style.color = theme.textMuted
     panel.appendChild(empty)
-    return panel
+    return backdrop
   }
 
   const table = document.createElement("table")
@@ -200,5 +215,5 @@ export const createAuditReportPanel = (
   table.appendChild(tbody)
   panel.appendChild(table)
 
-  return panel
+  return backdrop
 }

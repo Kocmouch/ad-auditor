@@ -99,13 +99,13 @@ describe("text leaks", () => {
     const filler = "lorem ipsum dolor sit amet ".repeat(10)
     const r = run(`<p>${filler} undefined ${filler}</p>`)
     expect(r.issues).toHaveLength(1)
-    expect(r.issues[0].excerpt.length).toBeLessThanOrEqual(MAX_EXCERPT_LENGTH)
+    expect(r.issues[0].excerpt.length <= MAX_EXCERPT_LENGTH).toBe(true)
     expect(r.issues[0].excerpt).toContain("undefined")
   })
 
   test("very long token is truncated", () => {
     const r = run(`<p>{{ ${"a".repeat(200)} }}</p>`)
-    expect(r.issues[0].token.length).toBeLessThanOrEqual(40)
+    expect(r.issues[0].token.length <= 40).toBe(true)
   })
 })
 
@@ -229,7 +229,7 @@ describe("result shaping", () => {
   test("excerpts never exceed the limit", () => {
     const long = "x".repeat(300)
     const r = run(`<a href="https://a.com/${long}/undefined/${long}">x</a>`)
-    expect(r.issues[0].excerpt.length).toBeLessThanOrEqual(MAX_EXCERPT_LENGTH)
+    expect(r.issues[0].excerpt.length <= MAX_EXCERPT_LENGTH).toBe(true)
     expect(r.issues[0].excerpt).toContain("undefined")
   })
 })

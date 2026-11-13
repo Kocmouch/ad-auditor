@@ -1,7 +1,4 @@
-import type {
-  LimitMetric,
-  MeasurementMethod
-} from "~lib/types/settings"
+import type { LimitMetric, MeasurementMethod } from "~lib/types/settings"
 
 import { DEFAULTS } from "./defaults"
 
@@ -90,6 +87,13 @@ export const parsers = {
     return DEFAULTS.ENABLE_CONTENT_CHECK
   },
 
+  enableQualityCheck: (value: unknown): boolean => {
+    if (typeof value === "boolean") {
+      return value
+    }
+    return DEFAULTS.ENABLE_QUALITY_CHECK
+  },
+
   enableAuditAll: (value: unknown): boolean => {
     if (typeof value === "boolean") {
       return value
@@ -119,5 +123,6 @@ export const parseFocusOffenders = parsers.focusOffenders
 export const parseShowAlerts = parsers.showAlerts
 export const parseShowRequestList = parsers.showRequestList
 export const parseEnableContentCheck = parsers.enableContentCheck
+export const parseEnableQualityCheck = parsers.enableQualityCheck
 export const parseEnableAuditAll = parsers.enableAuditAll
 export const parseSettingsVersion = parsers.settingsVersion

@@ -19,6 +19,15 @@ describe("content settings", () => {
     expect(parsed.alertsEnabled).toBe(true)
   })
 
+  test("quality check defaults on and follows storage", () => {
+    expect(getDefaultContentSettings().qualityCheckEnabled).toBe(true)
+    const next = parseContentSettings(
+      { [STORAGE_KEYS.ENABLE_QUALITY_CHECK]: false },
+      getDefaultContentSettings()
+    )
+    expect(next.qualityCheckEnabled).toBe(false)
+  })
+
   test("only changed keys are updated", () => {
     const base = { ...getDefaultContentSettings(), waterfallEnabled: true }
     const next = parseContentSettings(
@@ -32,7 +41,10 @@ describe("content settings", () => {
   test("invalid values are replaced by defaults", () => {
     const next = parseContentSettings(
       { [STORAGE_KEYS.MEASUREMENT_METHOD]: "nope" },
-      { ...getDefaultContentSettings(), measurementMethod: "legacy_performance" }
+      {
+        ...getDefaultContentSettings(),
+        measurementMethod: "legacy_performance"
+      }
     )
     expect(next.measurementMethod).toBe(
       getDefaultContentSettings().measurementMethod

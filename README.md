@@ -47,11 +47,19 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
 - **Content checking** (button with picture icon; setting `Show content check button`, default ON):
   - Images: broken, oversized vs rendered size, legacy formats/large GIFs
   - Links: empty/insecure hrefs, missing target/noopener, hidden or duplicate links, `clickTag` problems
-  - Highlights elements in the creative (group `images`/`links`) and lists issues by severity; clicking a row scrolls to the element
+  - Template leaks: unreplaced placeholders (`{{ }}`, `%%X%%`, `undefined`, ...) in text and URLs
+  - Highlights elements in the creative (groups `images`/`links`/`template`) and lists issues by severity; clicking a row scrolls to the element
+- **Quality checking** (button with shield icon; setting `Show quality check button`, default ON):
+  - Structure: quirks mode, charset, duplicate ids, tiny/clipped text, offscreen elements
+  - Clickability: tiny click targets, obstructed opt-out/links, click coverage % shown in the panel header
+  - Animations: infinite loops, over-long animations, too many at once
+  - Highlights by severity (groups `structure`/`clicks`/`animations`); document-level findings are listed in the panel only
+- **Two running modes**: checks work on preview pages with ad iframes (checks run inside each iframe, results render on the host page) and on a standalone `ams.creativecdn.com/ad/creatives?preview=true` tab (no iframe; the banner is detected from the page content and used as the measured area, panels render in the same page)
 - **Request problems** (Enhanced CDP; Legacy mode only detects mixed content):
   - HTTP 4xx/5xx, failed/blocked requests, mixed content, uncompressed text, redirect chains
   - Compact "Problems" section in the request list and a red/amber `! N` indicator on the stats bar
-- **Overall status dot** (green/amber/red) on the stats bar after any check has run, from the worst font/accessibility/content/request severity
+- **Console problems** (Enhanced CDP): uncaught exceptions, `console.error`/`warn`, browser issues in a compact "Console" section of the request list and counted in the `! N` indicator. Data is tab-wide, so with several creatives on one preview page it is shared (accurate on a standalone tab)
+- **Overall status dot** (green/amber/red) on the stats bar after any check has run, from the worst font/accessibility/content/quality/request/console severity
 - **Audit all** (button at the bottom-left of preview pages; setting `Show Audit all button`, default ON):
   - Runs every check in all creatives and shows a creative x check x severity table
   - `Copy report` copies it as Markdown
@@ -67,7 +75,7 @@ On fresh install, the extension saves defaults to `chrome.storage.sync`:
 - `DISABLE_CACHE = true`
 - `SHOW_CDP_STATUS = false`
 - `ENABLE_SNAPSHOTS`, `SHOW_WATERFALL`, `FOCUS_OFFENDERS`, `SHOW_ALERTS`, `SHOW_REQUEST_LIST = false`
-- `ENABLE_CONTENT_CHECK`, `ENABLE_AUDIT_ALL = true`
+- `ENABLE_CONTENT_CHECK`, `ENABLE_QUALITY_CHECK`, `ENABLE_AUDIT_ALL = true`
 
 (Source of truth: `lib/storage/defaults.ts`.)
 

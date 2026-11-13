@@ -13,6 +13,7 @@ export const getOrCreateSession = (tabId: number): TabSession => {
     attachPromise: null,
     attached: false,
     childSessionIds: new Set<string>(),
+    consoleProblems: [],
     isTopNavigationInProgress: false,
     lastNavigationUrl: "",
     requestKeyByRequestId: new Map<string, string>(),
@@ -28,6 +29,7 @@ export const clearSessionMetrics = (session: TabSession) => {
   session.requestKeyByRequestId.clear()
   session.requestSequenceByRequestId.clear()
   session.requests.clear()
+  session.consoleProblems.length = 0
 }
 
 export const removeSession = (tabId: number) => {

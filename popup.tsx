@@ -109,6 +109,9 @@ function IndexPopup() {
   const [contentCheckEnabled, setContentCheckEnabled] = useState<boolean>(
     DEFAULTS.ENABLE_CONTENT_CHECK
   )
+  const [qualityCheckEnabled, setQualityCheckEnabled] = useState<boolean>(
+    DEFAULTS.ENABLE_QUALITY_CHECK
+  )
   const [auditAllEnabled, setAuditAllEnabled] = useState<boolean>(
     DEFAULTS.ENABLE_AUDIT_ALL
   )
@@ -133,6 +136,7 @@ function IndexPopup() {
         STORAGE_KEYS.SHOW_ALERTS,
         STORAGE_KEYS.SHOW_REQUEST_LIST,
         STORAGE_KEYS.ENABLE_CONTENT_CHECK,
+        STORAGE_KEYS.ENABLE_QUALITY_CHECK,
         STORAGE_KEYS.ENABLE_AUDIT_ALL,
         STORAGE_KEYS.LIMIT_METRIC,
         STORAGE_KEYS.LIMIT_BYTES
@@ -153,6 +157,9 @@ function IndexPopup() {
         setRequestListEnabled(parsers.showRequestList(result[STORAGE_KEYS.SHOW_REQUEST_LIST]))
         setContentCheckEnabled(
           parsers.enableContentCheck(result[STORAGE_KEYS.ENABLE_CONTENT_CHECK])
+        )
+        setQualityCheckEnabled(
+          parsers.enableQualityCheck(result[STORAGE_KEYS.ENABLE_QUALITY_CHECK])
         )
         setAuditAllEnabled(
           parsers.enableAuditAll(result[STORAGE_KEYS.ENABLE_AUDIT_ALL])
@@ -266,6 +273,12 @@ function IndexPopup() {
     const nextValue = !contentCheckEnabled
     setContentCheckEnabled(nextValue)
     chrome.storage.sync.set({ [STORAGE_KEYS.ENABLE_CONTENT_CHECK]: nextValue })
+  }
+
+  const onToggleQualityCheckEnabled = () => {
+    const nextValue = !qualityCheckEnabled
+    setQualityCheckEnabled(nextValue)
+    chrome.storage.sync.set({ [STORAGE_KEYS.ENABLE_QUALITY_CHECK]: nextValue })
   }
 
   const onToggleAuditAllEnabled = () => {
@@ -474,7 +487,13 @@ function IndexPopup() {
               contentCheckEnabled,
               onToggleContentCheckEnabled,
               "Show content check button",
-              "Adds an images & links check button to the status bar."
+              "Adds an images, links & template-leak check button to the status bar."
+            )}
+            {renderToggleCard(
+              qualityCheckEnabled,
+              onToggleQualityCheckEnabled,
+              "Show quality check button",
+              "Adds a structure, clickability & animation check button to the status bar."
             )}
             {renderToggleCard(
               auditAllEnabled,

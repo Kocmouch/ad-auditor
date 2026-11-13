@@ -1,3 +1,5 @@
+import type { ConsoleProblem } from "~lib/cdp/types"
+import { buildConsoleView } from "~lib/features/console-problems"
 import {
   findRequestProblems,
   type RequestRecord
@@ -31,6 +33,7 @@ export const SORT_OPTIONS: ReadonlyArray<readonly [string, string]> = [
 ]
 
 export type RequestPanel = {
+  consoleSection: HTMLDivElement
   container: HTMLDivElement
   hostInput: HTMLInputElement
   list: HTMLUListElement
@@ -53,6 +56,10 @@ export type RequestPanelHandlers = {
 }
 
 export type RequestPanelUpdate = {
+  /** Console problems (CDP); the section is hidden when empty. */
+  consoleProblems?: ConsoleProblem[]
+  /** True when the data covers the whole tab, not just this creative. */
+  consoleTabWide?: boolean
   enabled: boolean
   focusOffenders: boolean
   /** Whether the pointer is over the badge (panel is only shown on hover). */
@@ -184,7 +191,20 @@ export const createRequestPanel = (
     "display:none;flex-direction:column;gap:2px;padding:4px 0;border-top:1px dashed rgba(125,255,106,0.35);font-size:10px"
   )
 
-  container.append(snapshotRow, filtersBar, problems, waterfall, list)
+  const consoleSection = document.createElement("div")
+  consoleSection.setAttribute(
+    "style",
+    "display:none;flex-direction:column;gap:2px;padding:4px 0;border-top:1px dashed rgba(125,255,106,0.35);font-size:10px"
+  )
+
+  container.append(
+    snapshotRow,
+    filtersBar,
+    problems,
+    consoleSection,
+    waterfall,
+    list
+  )
 
   typeSelect.addEventListener("change", handlers.onControlChange)
   statusSelect.addEventListener("change", handlers.onControlChange)
@@ -195,6 +215,7 @@ export const createRequestPanel = (
   compareButton.addEventListener("click", handlers.onCompareSnapshot)
 
   return {
+    consoleSection,
     container,
     hostInput,
     list,
@@ -327,6 +348,57 @@ export const renderRequestProblems = (
   }
 }
 
+/** Compact "Console" section; hidden when there is nothing to report. */
+export const renderConsoleProblems = (
+  container: HTMLDivElement,
+  problems: ConsoleProblem[],
+  tabWide: boolean
+) => {
+  container.textContent = ""
+  const view = buildConsoleView(problems)
+  if (view.total === 0) {
+    container.style.display = "none"
+    return
+  }
+
+  container.style.display = "flex"
+  const title = document.createElement("div")
+  title.textContent = `Console (${view.errors} error(s), ${view.warnings} warning(s))`
+  title.setAttribute("style", "font-weight:700;color:#d8dde7")
+  container.appendChild(title)
+
+  for (const row of view.rows) {
+    const line = document.createElement("div")
+    const color =
+      row.severity === "error"
+        ? PROBLEM_COLORS.error
+        : row.severity === "warning"
+          ? PROBLEM_COLORS.warning
+          : "#9db7d2"
+    line.setAttribute("style", `color:${color};word-break:break-all`)
+    line.setAttribute("data-console-severity", row.severity)
+    line.textContent = [
+      row.icon,
+      row.message,
+      row.countText,
+      row.source ? `(${row.source})` : ""
+    ]
+      .filter(Boolean)
+      .join(" ")
+    container.appendChild(line)
+  }
+
+  const notes = [view.footer, tabWide ? "tab-wide (all creatives)" : ""]
+    .filter(Boolean)
+    .join(" · ")
+  if (notes) {
+    const footer = document.createElement("div")
+    footer.textContent = notes
+    footer.style.color = "#9db7d2"
+    container.appendChild(footer)
+  }
+}
+
 const renderRequestRows = (list: HTMLUListElement, view: RequestListView) => {
   list.textContent = ""
 
@@ -389,8 +461,16 @@ export const updateRequestPanel = (
   })
   panel.summary.textContent = view.summary
   renderRequestProblems(panel.problems, update.items)
+  renderConsoleProblems(
+    panel.consoleSection,
+    update.consoleProblems ?? [],
+    update.consoleTabWide ?? false
+  )
 
-  if (sourceItems.length === 0) {
+  if (
+    sourceItems.length === 0 &&
+    panel.consoleSection.style.display === "none"
+  ) {
     panel.container.style.display = "none"
     renderWaterfall(panel.waterfall, [])
     return sourceItems

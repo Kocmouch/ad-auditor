@@ -83,7 +83,8 @@ export const handleRuntimeExceptionThrown = (
   const exception = isRecord(details.exception) ? details.exception : undefined
   // description is "Error: msg\n    at ..." - keep only the first line.
   const firstLine = asString(exception?.description).split("\n")[0]?.trim()
-  const message = firstLine || asString(exception?.value) || asString(details.text)
+  const message =
+    firstLine || asString(exception?.value) || asString(details.text)
 
   addConsoleProblem(session, {
     column: toOneBased(details.columnNumber),
@@ -125,7 +126,9 @@ export const handleRuntimeConsoleApiCalled = (
   const args = Array.isArray(params?.args) ? params.args : []
   const message = args.map(stringifyConsoleArg).filter(Boolean).join(" ")
 
-  const stackTrace = isRecord(params?.stackTrace) ? params.stackTrace : undefined
+  const stackTrace = isRecord(params?.stackTrace)
+    ? params.stackTrace
+    : undefined
   const frames = Array.isArray(stackTrace?.callFrames)
     ? stackTrace.callFrames
     : []

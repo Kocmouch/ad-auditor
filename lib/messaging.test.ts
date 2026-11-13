@@ -5,11 +5,14 @@ import {
   getOriginFromSrc,
   parseWindowMessage,
   sanitizeCheckOutcomes,
+  sanitizeConsoleProblems,
   sanitizeContentIssues,
+  sanitizeQualityIssues,
   sanitizeRequestItems,
   toWireContentIssues,
   toWireFontMismatches,
   toWireIssues,
+  toWireQualityIssues,
   WINDOW_MESSAGE
 } from "./messaging"
 
@@ -49,6 +52,18 @@ describe("wire format", () => {
     expect(WINDOW_MESSAGE.FOCUS_CONTENT_ISSUE).toBe(
       "ad-auditor-focus-content-issue"
     )
+    expect(WINDOW_MESSAGE.CHECK_QUALITY_REQUEST).toBe(
+      "ad-auditor-check-quality-request"
+    )
+    expect(WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE).toBe(
+      "ad-auditor-check-quality-response"
+    )
+    expect(WINDOW_MESSAGE.CLEAR_QUALITY_HIGHLIGHTS).toBe(
+      "ad-auditor-clear-quality-highlights"
+    )
+    expect(WINDOW_MESSAGE.FOCUS_QUALITY_ISSUE).toBe(
+      "ad-auditor-focus-quality-issue"
+    )
     expect(WINDOW_MESSAGE.AUDIT_REQUEST).toBe("ad-auditor-audit-request")
     expect(WINDOW_MESSAGE.AUDIT_RESPONSE).toBe("ad-auditor-audit-response")
   })
@@ -76,7 +91,9 @@ describe("parseWindowMessage", () => {
 
   test("stats requires source and payload and sanitises values", () => {
     expect(parseWindowMessage({ type: "stats", payload: {} })).toBeNull()
-    expect(parseWindowMessage({ source: "ad-auditor", type: "stats" })).toBeNull()
+    expect(
+      parseWindowMessage({ source: "ad-auditor", type: "stats" })
+    ).toBeNull()
 
     const parsed = parseWindowMessage({
       payload: {
@@ -187,7 +204,12 @@ describe("content and audit messages", () => {
       parseWindowMessage({
         iframeUrl: "https://x",
         issues: [
-          { category: "images", kind: "broken", message: "m", severity: "error" },
+          {
+            category: "images",
+            kind: "broken",
+            message: "m",
+            severity: "error"
+          },
           { category: "other", kind: "k", message: "m", severity: "error" },
           { category: "links", kind: "k", message: "m", severity: "fatal" },
           "junk"
@@ -246,10 +268,183 @@ describe("content and audit messages", () => {
       }
     ])
     expect(wire).toEqual([
-      { category: "links", kind: "empty-href", message: "m", severity: "warning" }
+      {
+        category: "links",
+        hasElement: true,
+        kind: "empty-href",
+        message: "m",
+        severity: "warning"
+      }
     ])
     expect(structuredClone(wire)).toEqual(wire)
     expect(sanitizeContentIssues(undefined)).toEqual([])
+  })
+})
+
+describe("quality messages", () => {
+  test("accepts quality request and clear messages", () => {
+    for (const type of [
+      WINDOW_MESSAGE.CHECK_QUALITY_REQUEST,
+      WINDOW_MESSAGE.CLEAR_QUALITY_HIGHLIGHTS
+    ]) {
+      expect(parseWindowMessage({ type })).toEqual({ type })
+    }
+  })
+
+  test("quality response needs an array, drops invalid issues, clamps coverage", () => {
+    expect(
+      parseWindowMessage({ type: WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE })
+    ).toBeNull()
+    expect(
+      parseWindowMessage({
+        coveragePercent: 140,
+        iframeUrl: "https://x",
+        issues: [
+          {
+            category: "clicks",
+            hasElement: true,
+            kind: "k",
+            message: "m",
+            severity: "warning"
+          },
+          { category: "images", kind: "k", message: "m", severity: "error" },
+          { category: "clicks", kind: "k", message: "m", severity: "fatal" }
+        ],
+        type: WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE
+      })
+    ).toEqual({
+      coveragePercent: 100,
+      iframeUrl: "https://x",
+      issues: [
+        {
+          category: "clicks",
+          hasElement: true,
+          kind: "k",
+          message: "m",
+          severity: "warning"
+        }
+      ],
+      type: WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE
+    })
+    expect(
+      parseWindowMessage({
+        coveragePercent: "x",
+        issues: [],
+        type: WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE
+      })
+    ).toEqual({
+      coveragePercent: null,
+      iframeUrl: "",
+      issues: [],
+      type: WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE
+    })
+  })
+
+  test("focus quality message needs a non-negative integer index", () => {
+    const type = WINDOW_MESSAGE.FOCUS_QUALITY_ISSUE
+    expect(parseWindowMessage({ index: 2, type })).toEqual({ index: 2, type })
+    expect(parseWindowMessage({ index: -1, type })).toBeNull()
+    expect(parseWindowMessage({ type })).toBeNull()
+  })
+
+  test("content responses accept the template category", () => {
+    expect(
+      sanitizeContentIssues([
+        { category: "template", kind: "text", message: "m", severity: "error" }
+      ]).length
+    ).toBe(1)
+  })
+
+  test("toWireQualityIssues drops the element and is cloneable", () => {
+    const wire = toWireQualityIssues([
+      {
+        category: "structure",
+        element: document.createElement("div"),
+        kind: "tiny-font",
+        message: "m",
+        severity: "warning"
+      },
+      {
+        category: "clicks",
+        kind: "low-coverage",
+        message: "c",
+        severity: "error"
+      }
+    ])
+    expect(wire).toEqual([
+      {
+        category: "structure",
+        hasElement: true,
+        kind: "tiny-font",
+        message: "m",
+        severity: "warning"
+      },
+      {
+        category: "clicks",
+        kind: "low-coverage",
+        message: "c",
+        severity: "error"
+      }
+    ])
+    expect(structuredClone(wire)).toEqual(wire)
+    expect(sanitizeQualityIssues(undefined)).toEqual([])
+  })
+
+  test("audit response keeps quality and console outcomes", () => {
+    const checks = {
+      console: { count: 1, severity: "error" },
+      quality: { count: 2, severity: "warning" }
+    }
+    expect(
+      parseWindowMessage({
+        checks,
+        iframeUrl: "",
+        type: WINDOW_MESSAGE.AUDIT_RESPONSE
+      })
+    ).toEqual({
+      checks,
+      iframeUrl: "",
+      type: WINDOW_MESSAGE.AUDIT_RESPONSE
+    })
+  })
+})
+
+describe("console problems on stats", () => {
+  test("sanitizeConsoleProblems keeps valid entries only", () => {
+    const valid = {
+      count: 2,
+      kind: "exception",
+      line: 4,
+      message: "boom",
+      severity: "error",
+      timestamp: 5,
+      url: "https://x/a.js"
+    }
+    expect(
+      sanitizeConsoleProblems([
+        valid,
+        { kind: "nope", message: "x", severity: "error" },
+        "junk"
+      ])
+    ).toEqual([valid as never])
+    expect(sanitizeConsoleProblems(undefined)).toEqual([])
+  })
+
+  test("stats payload carries sanitised console problems", () => {
+    const message = parseWindowMessage({
+      payload: {
+        consoleProblems: [
+          { kind: "console-error", message: "m", severity: "error" }
+        ]
+      },
+      source: "ad-auditor",
+      type: WINDOW_MESSAGE.STATS
+    })
+    expect(
+      message?.type === WINDOW_MESSAGE.STATS
+        ? message.payload.consoleProblems.length
+        : -1
+    ).toBe(1)
   })
 })
 

@@ -11,7 +11,12 @@ export type IconSpec = {
   viewBox: string
 }
 
-export type IconName = "accessibility" | "content" | "fonts" | "open"
+export type IconName =
+  | "accessibility"
+  | "content"
+  | "fonts"
+  | "open"
+  | "quality"
 
 /** Static icon geometry; rendered with createElementNS (no innerHTML). */
 export const ICONS: Record<IconName, IconSpec> = {
@@ -19,7 +24,9 @@ export const ICONS: Record<IconName, IconSpec> = {
     rounded: true,
     shapes: [
       {
-        attrs: { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" },
+        attrs: {
+          d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+        },
         tag: "path"
       },
       { attrs: { points: "15 3 21 3 21 9" }, tag: "polyline" },
@@ -40,11 +47,24 @@ export const ICONS: Record<IconName, IconSpec> = {
     rounded: true,
     shapes: [
       {
-        attrs: { d: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" },
+        attrs: {
+          d: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"
+        },
         tag: "path"
       },
       { attrs: { points: "4 17 9 12 13 16 16 13 20 17" }, tag: "polyline" },
       { attrs: { d: "M8.5 8.5h.01" }, tag: "path" }
+    ],
+    viewBox: "0 0 24 24"
+  },
+  quality: {
+    rounded: true,
+    shapes: [
+      {
+        attrs: { d: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" },
+        tag: "path"
+      },
+      { attrs: { points: "8.5 12 11 14.5 15.5 9.5" }, tag: "polyline" }
     ],
     viewBox: "0 0 24 24"
   },

@@ -1,6 +1,25 @@
 import type { WireContentIssue } from "~lib/messaging"
 import { SEVERITY_COLORS, type HighlightSeverity } from "~lib/ui/highlight"
-import type { Theme } from "~lib/ui/theme"
+import { Z_INDEX, type Theme } from "~lib/ui/theme"
+
+/** Issue shape shared by the content and quality panels (wire format). */
+export type PanelIssue = {
+  category: string
+  severity: HighlightSeverity
+  message: string
+  /** Rows without an element are listed but not clickable. */
+  hasElement?: true
+}
+
+export type PanelOptions = {
+  id: string
+  title: string
+  emptyText: string
+  /** CSS `right` offset; the quality panel sits left of the content panel. */
+  right?: string
+  /** Shown at the end of the summary strip, e.g. click coverage. */
+  subtitle?: string
+}
 
 export type ContentPanelHandlers = {
   /** Called with the index of the clicked issue (position in `issues`). */
@@ -17,9 +36,13 @@ const SEVERITY_TITLES: Record<HighlightSeverity, string> = {
   warning: "Warnings"
 }
 
-const CATEGORY_LABELS: Record<WireContentIssue["category"], string> = {
+const CATEGORY_LABELS: Record<string, string> = {
+  animations: "Animation",
+  clicks: "Click",
   images: "Image",
-  links: "Link"
+  links: "Link",
+  structure: "Structure",
+  template: "Template"
 }
 
 const createSummaryCount = (
@@ -39,16 +62,19 @@ const createSummaryCount = (
 }
 
 const createIssueRow = (
-  issue: WireContentIssue,
+  issue: PanelIssue,
   index: number,
   theme: Theme,
   onSelect: (index: number) => void
-): HTMLButtonElement => {
+): HTMLElement => {
   const color = SEVERITY_COLORS[issue.severity].color
-  const row = document.createElement("button")
-  row.type = "button"
+  const clickable = issue.hasElement === true
+  const row = document.createElement(clickable ? "button" : "div")
+  if (row instanceof HTMLButtonElement) {
+    row.type = "button"
+    row.title = "Scroll to element in the creative"
+  }
   row.setAttribute("data-issue-index", String(index))
-  row.title = "Scroll to element in the creative"
   row.setAttribute(
     "style",
     [
@@ -64,12 +90,13 @@ const createIssueRow = (
       "margin-bottom: 6px",
       "font: inherit",
       "font-size: 12px",
-      "cursor: pointer"
+      "box-sizing: border-box",
+      clickable ? "cursor: pointer" : "cursor: default"
     ].join(";")
   )
 
   const tag = document.createElement("span")
-  tag.textContent = CATEGORY_LABELS[issue.category]
+  tag.textContent = CATEGORY_LABELS[issue.category] ?? issue.category
   tag.setAttribute(
     "style",
     `color: ${color}; font-weight: 600; margin-right: 8px; font-size: 11px`
@@ -79,25 +106,32 @@ const createIssueRow = (
   message.style.wordBreak = "break-word"
   row.append(tag, message)
 
-  row.addEventListener("click", () => onSelect(index))
+  if (clickable) {
+    row.addEventListener("click", () => onSelect(index))
+  }
   return row
 }
 
-/** Results panel for the image + link ("Content") check. */
-export const createContentResultsPanel = (
-  issues: WireContentIssue[],
+/**
+ * Shared results panel: severity sections of issue rows. Rows with an element
+ * are clickable (the owner scrolls to/flashes the element); the rest are
+ * informational (coverage, document-level problems).
+ */
+export const createIssuesPanel = (
+  issues: PanelIssue[],
   theme: Theme,
-  handlers: ContentPanelHandlers
+  handlers: ContentPanelHandlers,
+  options: PanelOptions
 ): HTMLDivElement => {
   const panel = document.createElement("div")
-  panel.id = "ad-auditor-content-check-results"
+  panel.id = options.id
   panel.setAttribute(
     "style",
     [
       "position: fixed",
       // Docked top-right so the creative stays visible when rows are clicked.
       "top: 20px",
-      "right: 20px",
+      `right: ${options.right ?? "20px"}`,
       `background: ${theme.background}`,
       "border-radius: 8px",
       `box-shadow: 0 8px 32px ${theme.shadowDark}, inset 0 1px 0 ${theme.shadowLight}`,
@@ -107,7 +141,7 @@ export const createContentResultsPanel = (
       "max-height: calc(100vh - 40px)",
       "overflow-y: auto",
       "box-sizing: border-box",
-      "z-index: 999999",
+      `z-index: ${Z_INDEX.panel}`,
       `color: ${theme.text}`,
       "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
       "font-size: 13px",
@@ -128,7 +162,7 @@ export const createContentResultsPanel = (
     ].join(";")
   )
   const title = document.createElement("h2")
-  title.textContent = "Content Check Results"
+  title.textContent = options.title
   title.setAttribute("style", "margin: 0; font-size: 16px; font-weight: 600")
   const closeButton = document.createElement("button")
   closeButton.type = "button"
@@ -170,11 +204,18 @@ export const createContentResultsPanel = (
   for (const severity of SEVERITY_ORDER) {
     summary.appendChild(createSummaryCount(severity, countOf(severity), theme))
   }
+  if (options.subtitle) {
+    const subtitle = document.createElement("strong")
+    subtitle.textContent = options.subtitle
+    subtitle.setAttribute("data-panel-subtitle", "true")
+    subtitle.style.marginLeft = "auto"
+    summary.appendChild(subtitle)
+  }
   panel.appendChild(summary)
 
   if (issues.length === 0) {
     const empty = document.createElement("div")
-    empty.textContent = "✓ No image or link issues detected"
+    empty.textContent = options.emptyText
     empty.setAttribute(
       "style",
       `padding: 24px; text-align: center; color: ${theme.accent}; font-size: 14px`
@@ -211,3 +252,15 @@ export const createContentResultsPanel = (
 
   return panel
 }
+
+/** Results panel for the image + link + template-leak ("Content") check. */
+export const createContentResultsPanel = (
+  issues: WireContentIssue[],
+  theme: Theme,
+  handlers: ContentPanelHandlers
+): HTMLDivElement =>
+  createIssuesPanel(issues, theme, handlers, {
+    emptyText: "✓ No image, link or template issues detected",
+    id: "ad-auditor-content-check-results",
+    title: "Content Check Results"
+  })

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import {
   accessibilityOutcome,
+  consoleOutcome,
   contentOutcome,
   fontOutcome,
   getOverallStatus,
@@ -54,6 +55,26 @@ describe("outcomes", () => {
     expect(
       contentOutcome([{ severity: "info" }, { severity: "warning" }])
     ).toEqual({ count: 2, severity: "warning" })
+  })
+
+  test("console uses the worst problem severity", () => {
+    expect(consoleOutcome([])).toEqual({ count: 0, severity: "ok" })
+    expect(
+      consoleOutcome([{ severity: "warning" }, { severity: "error" }])
+    ).toEqual({ count: 2, severity: "error" })
+  })
+
+  test("withRequestOutcome adds requests and console only after a check ran", () => {
+    const requests = { count: 0, severity: "ok" } as const
+    const consoleResult = { count: 1, severity: "error" } as const
+    expect(withRequestOutcome({}, requests, consoleResult)).toEqual({})
+    const checks = withRequestOutcome(
+      { fonts: { count: 0, severity: "ok" } },
+      requests,
+      consoleResult
+    )
+    expect(checks.console).toEqual(consoleResult)
+    expect(getOverallStatus(checks)).toBe("red")
   })
 
   test("requests: errors beat warnings", () => {

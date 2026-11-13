@@ -12,7 +12,9 @@ const rows: AuditReportRow[] = [
     checks: {
       accessibility: { count: 1, severity: "error" },
       content: { count: 0, severity: "ok" },
+      console: { count: 1, severity: "warning" },
       fonts: { count: 2, severity: "warning" },
+      quality: { count: 3, severity: "info" },
       requests: { count: 0, severity: "ok" }
     },
     id: "banner-1",
@@ -59,16 +61,16 @@ describe("formatAuditReportMarkdown", () => {
     expect(markdown).toContain("Page: https://creatives-preview.rtbhouse.com/x")
     expect(markdown).toContain("Generated: 2026-01-02T03:04:05.000Z")
     expect(markdown).toContain(
-      "| Creative | Size | Fonts | Accessibility | Content | Requests | Overall |"
+      "| Creative | Size | Fonts | Accessibility | Content | Quality | Requests | Console | Overall |"
     )
     expect(markdown).toContain(
-      "| banner-1 | 300x250 | warning (2) | error (1) | ok | ok | error |"
+      "| banner-1 | 300x250 | warning (2) | error (1) | ok | info (3) | ok | warning (1) | error |"
     )
   })
 
   test("escapes pipes and marks checks that did not run", () => {
     const markdown = formatAuditReportMarkdown(rows)
-    expect(markdown).toContain("| a\\|b | - | ok | - | - | - | ok |")
+    expect(markdown).toContain("| a\\|b | - | ok | - | - | - | - | - | ok |")
   })
 
   test("handles an empty report", () => {

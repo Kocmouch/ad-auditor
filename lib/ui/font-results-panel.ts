@@ -1,3 +1,5 @@
+import { Z_INDEX } from "~lib/ui/theme"
+
 import type { FontMismatch } from "../features/font-checker"
 
 type Theme = {
@@ -29,7 +31,7 @@ export const createFontCheckResultsPanel = (
     "background:linear-gradient(145deg, #2a2f3a, #313745)",
     "border-radius:16px",
     "box-shadow:12px 12px 24px rgba(15, 18, 24, 0.8), -12px -12px 24px rgba(255, 255, 255, 0.05)",
-    "z-index:2147483647",
+    `z-index:${Z_INDEX.panel}`,
     "font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     "color:#d8dde7",
     "backdrop-filter:blur(10px)",

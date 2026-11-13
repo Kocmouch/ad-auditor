@@ -1,10 +1,13 @@
 import {
+  consoleOutcome,
   getOverallStatus,
   requestOutcome,
   withRequestOutcome,
   type CheckOutcomes,
   type OverallStatus
 } from "~lib/audit-summary"
+import type { ConsoleProblem } from "~lib/cdp/types"
+import { filterConsoleProblems } from "~lib/features/console-problems"
 import {
   findRequestProblems,
   type RequestRecord
@@ -115,33 +118,55 @@ export const attachStatusTooltips = (indicators: StatusIndicators) => {
   )
 }
 
-/** Recomputes both indicators from request items and the checks run so far. */
+/**
+ * Recomputes both indicators from request items, console problems and the
+ * checks run so far. The "! N" indicator counts request and console problems.
+ */
 export const updateStatusIndicators = (
   indicators: StatusIndicators,
   items: RequestRecord[],
-  checks: CheckOutcomes
+  checks: CheckOutcomes,
+  consoleProblems: ConsoleProblem[] = []
 ) => {
   const { problems, summary } = findRequestProblems(items)
+  const visibleConsole = filterConsoleProblems(consoleProblems)
+  const consoleErrors = visibleConsole.filter(
+    (problem) => problem.severity === "error"
+  ).length
   const { requestIndicator, statusDot } = indicators
 
-  if (problems.length === 0) {
+  const total = problems.length + visibleConsole.length
+  if (total === 0) {
     requestIndicator.style.display = "none"
     requestIndicator.setAttribute("data-summary", "")
   } else {
     requestIndicator.style.display = "inline"
     requestIndicator.style.color =
-      summary.errors > 0
+      summary.errors + consoleErrors > 0
         ? SEVERITY_COLORS.error.color
         : SEVERITY_COLORS.warning.color
-    requestIndicator.textContent = `! ${summary.total}`
+    requestIndicator.textContent = `! ${summary.total + visibleConsole.length}`
     requestIndicator.setAttribute(
       "data-summary",
-      `Request problems: ${summary.errors} error(s), ${summary.warnings} warning(s)`
+      [
+        problems.length > 0
+          ? `Request problems: ${summary.errors} error(s), ${summary.warnings} warning(s)`
+          : "",
+        visibleConsole.length > 0
+          ? `Console: ${consoleErrors} error(s), ${visibleConsole.length - consoleErrors} other`
+          : ""
+      ]
+        .filter(Boolean)
+        .join("; ")
     )
   }
 
   const status = getOverallStatus(
-    withRequestOutcome(checks, requestOutcome(summary))
+    withRequestOutcome(
+      checks,
+      requestOutcome(summary),
+      consoleOutcome(visibleConsole)
+    )
   )
   statusDot.setAttribute("data-audit-status", status)
   if (status === "none") {
@@ -218,10 +243,7 @@ export const createAlertsContainer = (floating: boolean): HTMLDivElement => {
 }
 
 /** Shows `lines` as "- line" rows, or hides the container when empty. */
-export const renderAlertLines = (
-  container: HTMLElement,
-  lines: string[]
-) => {
+export const renderAlertLines = (container: HTMLElement, lines: string[]) => {
   container.textContent = ""
   if (lines.length === 0) {
     container.style.display = "none"

@@ -1,7 +1,7 @@
 import {
+  attachStatusTooltips,
   BADGE_FONT_FAMILY,
   createAlertsContainer,
-  attachStatusTooltips,
   createStatsValues,
   createStatusIndicators,
   createToolbarButton,
@@ -13,6 +13,7 @@ import {
   type RequestPanel,
   type RequestPanelHandlers
 } from "~lib/ui/request-panel"
+import { Z_INDEX } from "~lib/ui/theme"
 import { attachDynamicTooltip } from "~lib/ui/tooltip"
 
 /** Badge rendered below an ad iframe by host-overlay. */
@@ -25,6 +26,7 @@ export type OverlayBadge = {
   indicators: StatusIndicators
   openButton: HTMLButtonElement
   panel: RequestPanel
+  qualityButton: HTMLButtonElement
   values: StatsValues
   wrapper: HTMLDivElement
 }
@@ -58,7 +60,7 @@ export const createOverlayBadge = (
       `font-family: ${BADGE_FONT_FAMILY}`,
       "font-size: 11px",
       "line-height: 1.2",
-      "z-index: 2147483647"
+      `z-index: ${Z_INDEX.badge}`
     ].join(";")
   )
 
@@ -107,6 +109,11 @@ export const createOverlayBadge = (
     tooltip: "Check images & links"
   })
 
+  const qualityButton = createToolbarButton({
+    icon: "quality",
+    tooltip: "Check structure, clickability & animations"
+  })
+
   const middleButtons = document.createElement("div")
   middleButtons.setAttribute(
     "style",
@@ -118,7 +125,12 @@ export const createOverlayBadge = (
       "justify-content: center"
     ].join(";")
   )
-  middleButtons.append(fontsButton, accessibilityButton, contentButton)
+  middleButtons.append(
+    fontsButton,
+    accessibilityButton,
+    contentButton,
+    qualityButton
+  )
 
   const alerts = createAlertsContainer(false)
 
@@ -135,6 +147,7 @@ export const createOverlayBadge = (
     indicators,
     openButton,
     panel,
+    qualityButton,
     values,
     wrapper
   }

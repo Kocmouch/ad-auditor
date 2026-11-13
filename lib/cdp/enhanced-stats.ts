@@ -1,4 +1,4 @@
-import type { RequestDetails } from "~lib/cdp/types"
+import type { ConsoleProblem, RequestDetails } from "~lib/cdp/types"
 
 type RequestItem = {
   host: string
@@ -11,6 +11,7 @@ type RequestItem = {
 
 export const getEnhancedStatsErrorPayload = (reason: string) => ({
   available: false,
+  consoleProblems: [] as ConsoleProblem[],
   requestDetails: [],
   reason,
   resources: 0,

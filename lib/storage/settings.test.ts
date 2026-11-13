@@ -7,7 +7,9 @@ import { getInstallDefaults, runSettingsMigration } from "./settings"
 
 describe("settings defaults", () => {
   test("uses defaults for unknown values", () => {
-    expect(parsers.measurementMethod(undefined)).toBe(DEFAULTS.MEASUREMENT_METHOD)
+    expect(parsers.measurementMethod(undefined)).toBe(
+      DEFAULTS.MEASUREMENT_METHOD
+    )
     expect(parsers.disableCache(undefined)).toBe(DEFAULTS.DISABLE_CACHE)
     expect(parsers.showCdpStatus(undefined)).toBe(DEFAULTS.SHOW_CDP_STATUS)
     expect(parsers.enableSnapshots(undefined)).toBe(DEFAULTS.ENABLE_SNAPSHOTS)
@@ -18,23 +20,30 @@ describe("settings defaults", () => {
       DEFAULTS.ENABLE_CONTENT_CHECK
     )
     expect(parsers.enableAuditAll("yes")).toBe(DEFAULTS.ENABLE_AUDIT_ALL)
+    expect(parsers.enableQualityCheck(undefined)).toBe(
+      DEFAULTS.ENABLE_QUALITY_CHECK
+    )
   })
 
   test("content check and audit all default to on", () => {
     expect(DEFAULTS.ENABLE_CONTENT_CHECK).toBe(true)
     expect(DEFAULTS.ENABLE_AUDIT_ALL).toBe(true)
+    expect(DEFAULTS.ENABLE_QUALITY_CHECK).toBe(true)
   })
 
   test("content check and audit all parsers accept booleans", () => {
     expect(parsers.enableContentCheck(false)).toBe(false)
     expect(parsers.enableContentCheck(true)).toBe(true)
     expect(parsers.enableAuditAll(false)).toBe(false)
+    expect(parsers.enableQualityCheck(false)).toBe(false)
+    expect(parsers.enableQualityCheck("no")).toBe(true)
   })
 
   test("install defaults and migration cover the new keys", () => {
     const defaults = getInstallDefaults()
     expect(defaults[STORAGE_KEYS.ENABLE_CONTENT_CHECK]).toBe(true)
     expect(defaults[STORAGE_KEYS.ENABLE_AUDIT_ALL]).toBe(true)
+    expect(defaults[STORAGE_KEYS.ENABLE_QUALITY_CHECK]).toBe(true)
     expect(defaults[STORAGE_KEYS.SETTINGS_VERSION]).toBe(
       CURRENT_SETTINGS_VERSION
     )
@@ -42,7 +51,7 @@ describe("settings defaults", () => {
 
   test("migration backfills missing keys from an older version", async () => {
     const store: Record<string, unknown> = {
-      [STORAGE_KEYS.SETTINGS_VERSION]: 4,
+      [STORAGE_KEYS.SETTINGS_VERSION]: 5,
       [STORAGE_KEYS.ENABLE_AUDIT_ALL]: false
     }
     const globals = globalThis as unknown as { chrome?: unknown }
@@ -65,6 +74,7 @@ describe("settings defaults", () => {
       globals.chrome = previous
     }
     expect(store[STORAGE_KEYS.ENABLE_CONTENT_CHECK]).toBe(true)
+    expect(store[STORAGE_KEYS.ENABLE_QUALITY_CHECK]).toBe(true)
     // An explicit user choice is never overwritten.
     expect(store[STORAGE_KEYS.ENABLE_AUDIT_ALL]).toBe(false)
     expect(store[STORAGE_KEYS.SETTINGS_VERSION]).toBe(CURRENT_SETTINGS_VERSION)

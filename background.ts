@@ -1,38 +1,46 @@
-import { STORAGE_KEYS } from "~lib/storage/keys"
-import { parsers } from "~lib/storage/parsers"
-import type { DebuggeeWithSession, TabSession, RequestMetric, RequestDetails } from "~lib/cdp/types"
+import { handleConsoleEvent } from "~lib/cdp/console-tracker"
 import {
   attachDebugger,
+  clearBrowserCacheForTab,
   sendDebuggerCommand,
-  setCacheDisabledForDebuggee,
-  clearBrowserCacheForTab
+  setCacheDisabledForDebuggee
 } from "~lib/cdp/debugger"
+import { getEnhancedStatsErrorPayload } from "~lib/cdp/enhanced-stats"
 import {
-  sessionsByTabId,
-  getOrCreateSession,
-  clearSessionMetrics,
-  removeSession
-} from "~lib/cdp/session-manager"
-import {
-  handleNetworkRequestWillBeSent,
+  getRequestProblemFields,
   handleNetworkDataReceived,
-  handleNetworkLoadingFinished,
   handleNetworkLoadingFailed,
-  handleNetworkResponseReceived,
-  getRequestProblemFields
+  handleNetworkLoadingFinished,
+  handleNetworkRequestWillBeSent,
+  handleNetworkResponseReceived
 } from "~lib/cdp/network-tracker"
 import {
+  clearSessionMetrics,
+  getOrCreateSession,
+  removeSession,
+  sessionsByTabId
+} from "~lib/cdp/session-manager"
+import type {
+  ConsoleProblem,
+  DebuggeeWithSession,
+  RequestDetails,
+  RequestMetric,
+  TabSession
+} from "~lib/cdp/types"
+import { RUNTIME_MESSAGE } from "~lib/messaging"
+import { STORAGE_KEYS } from "~lib/storage/keys"
+import { parsers } from "~lib/storage/parsers"
+import {
+  getDisableCacheValue,
   getInstallDefaults,
-  runSettingsMigration,
-  getDisableCacheValue
+  runSettingsMigration
 } from "~lib/storage/settings"
 import {
+  getDocumentKey,
+  isCacheControlUrl,
   isTargetAuditUrl,
-  isCacheControlUrl
+  normalizeDocumentUrl
 } from "~lib/utils/url-validators"
-import { getEnhancedStatsErrorPayload } from "~lib/cdp/enhanced-stats"
-import { RUNTIME_MESSAGE } from "~lib/messaging"
-import { normalizeDocumentUrl, getDocumentKey } from "~lib/utils/url-validators"
 
 const OPEN_TAB_DEDUPE_WINDOW_MS = 800
 const lastOpenRequestByKey = new Map<string, number>()
@@ -55,7 +63,10 @@ const syncCachePolicyForSession = async (
 
   for (const childSessionId of session.childSessionIds) {
     try {
-      await setCacheDisabledForDebuggee({ sessionId: childSessionId, tabId }, disableCacheEnabled)
+      await setCacheDisabledForDebuggee(
+        { sessionId: childSessionId, tabId },
+        disableCacheEnabled
+      )
     } catch {
       // Ignore detached child targets.
     }
@@ -80,6 +91,17 @@ const syncCachePolicyForAttachedTabs = (shouldClearCache: boolean) => {
   }
 }
 
+/** Best-effort: console tracking must never break attaching. */
+const enableConsoleDomains = async (debuggee: DebuggeeWithSession) => {
+  for (const domain of ["Runtime", "Log", "Audits"]) {
+    try {
+      await sendDebuggerCommand(debuggee, `${domain}.enable`)
+    } catch {
+      // Domain unavailable on this target; ignore.
+    }
+  }
+}
+
 const ensureDebuggerAttached = async (tabId: number): Promise<TabSession> => {
   const session = getOrCreateSession(tabId)
 
@@ -99,6 +121,7 @@ const ensureDebuggerAttached = async (tabId: number): Promise<TabSession> => {
           waitForDebuggerOnStart: false
         })
         await sendDebuggerCommand(rootDebuggee, "Network.enable")
+        await enableConsoleDomains(rootDebuggee)
         await setCacheDisabledForDebuggee(rootDebuggee, disableCacheEnabled)
         session.attached = true
         session.attachError = null
@@ -195,9 +218,17 @@ const handleDebuggerEvent = (
       "Network.enable"
     )
       .then(() =>
-        setCacheDisabledForDebuggee({ sessionId: attachedSessionId, tabId }, disableCacheEnabled)
+        setCacheDisabledForDebuggee(
+          { sessionId: attachedSessionId, tabId },
+          disableCacheEnabled
+        )
       )
+      .then(() => enableConsoleDomains({ sessionId: attachedSessionId, tabId }))
       .catch(() => undefined)
+    return
+  }
+
+  if (handleConsoleEvent(session, method, params)) {
     return
   }
 
@@ -232,6 +263,7 @@ const getEnhancedStatsForTab = async (tabId: number, documentUrl: string) => {
   if (!session.attached) {
     return {
       available: false,
+      consoleProblems: [] as ConsoleProblem[],
       requestDetails: [],
       reason: session.attachError ?? "Debugger is not attached",
       resources: 0,
@@ -281,10 +313,12 @@ const getEnhancedStatsForTab = async (tabId: number, documentUrl: string) => {
 
   for (const metric of session.requests.values()) {
     const metricTransferred = metric.completed
-      ? (metric.finalEncodedBytes ?? metric.encodedBytesFromChunks)
+      ? metric.finalEncodedBytes ?? metric.encodedBytesFromChunks
       : metric.encodedBytesFromChunks
     const metricResources = metric.decodedBytes
-    const metricStatus: "done" | "pending" = metric.completed ? "done" : "pending"
+    const metricStatus: "done" | "pending" = metric.completed
+      ? "done"
+      : "pending"
     const requestDetails: RequestDetails = {
       ...getRequestProblemFields(metric),
       host: metric.requestUrlHost,
@@ -310,7 +344,8 @@ const getEnhancedStatsForTab = async (tabId: number, documentUrl: string) => {
       normalizedRequestUrl === normalizedDocumentUrl &&
       metric.startedAt === activeDocumentStartedAt
     const matchesByLoaderId =
-      activeDocumentLoaderId !== "" && metric.loaderId === activeDocumentLoaderId
+      activeDocumentLoaderId !== "" &&
+      metric.loaderId === activeDocumentLoaderId
     const matchesByFrameId =
       activeDocumentFrameId !== "" && metric.frameId === activeDocumentFrameId
     const matchesByDocumentKeyFallback =
@@ -341,6 +376,7 @@ const getEnhancedStatsForTab = async (tabId: number, documentUrl: string) => {
 
   return {
     available: true,
+    consoleProblems: session.consoleProblems.map((problem) => ({ ...problem })),
     requestDetails: docRequestDetails,
     resources: Math.max(0, Math.round(docResources)),
     tabRequestDetails,
@@ -511,7 +547,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === RUNTIME_MESSAGE.GET_CDP_STATUS) {
-    const tabId = typeof message?.tabId === "number" ? message.tabId : sender.tab?.id
+    const tabId =
+      typeof message?.tabId === "number" ? message.tabId : sender.tab?.id
 
     if (typeof tabId !== "number") {
       sendResponse({
@@ -532,7 +569,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error: unknown) => {
         sendResponse({
           ok: false,
-          reason: error instanceof Error ? error.message : "Failed to inspect CDP",
+          reason:
+            error instanceof Error ? error.message : "Failed to inspect CDP",
           status: "error"
         })
       })
@@ -543,7 +581,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === RUNTIME_MESSAGE.GET_ENHANCED_STATS) {
     const tabId = sender.tab?.id
     const documentUrl =
-      typeof message?.documentUrl === "string" ? message.documentUrl : sender.url ?? ""
+      typeof message?.documentUrl === "string"
+        ? message.documentUrl
+        : sender.url ?? ""
 
     if (typeof tabId !== "number") {
       sendResponse({
@@ -583,9 +623,11 @@ chrome.runtime.onInstalled.addListener((details) => {
   const defaults = getInstallDefaults()
 
   chrome.storage.sync.set(defaults, () => {
-    getDisableCacheValue().then((value) => {
-      disableCacheEnabled = value
-    }).catch(() => undefined)
+    getDisableCacheValue()
+      .then((value) => {
+        disableCacheEnabled = value
+      })
+      .catch(() => undefined)
 
     chrome.tabs.create({
       url: chrome.runtime.getURL("tabs/welcome.html")
@@ -605,7 +647,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     return
   }
 
-  const nextValue = parsers.disableCache(changes[STORAGE_KEYS.DISABLE_CACHE].newValue)
+  const nextValue = parsers.disableCache(
+    changes[STORAGE_KEYS.DISABLE_CACHE].newValue
+  )
   const shouldClearCache = !disableCacheEnabled && nextValue
   disableCacheEnabled = nextValue
   syncCachePolicyForAttachedTabs(shouldClearCache)

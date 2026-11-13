@@ -7,18 +7,26 @@ import { getDarkTheme } from "~lib/ui/theme"
 const issues: WireContentIssue[] = [
   {
     category: "links",
+    hasElement: true,
     kind: "empty-href",
     message: "warn link",
     severity: "warning"
   },
   {
     category: "images",
+    hasElement: true,
     kind: "broken",
     message: "<b>broken</b>",
     severity: "error"
   },
   { category: "images", kind: "format", message: "info img", severity: "info" },
-  { category: "links", kind: "x", message: "second error", severity: "error" }
+  {
+    category: "template",
+    hasElement: true,
+    kind: "text",
+    message: "second error",
+    severity: "error"
+  }
 ]
 
 describe("createContentResultsPanel", () => {
@@ -46,6 +54,18 @@ describe("createContentResultsPanel", () => {
     expect(selected).toEqual([3, 0])
   })
 
+  test("rows without an element are listed but not clickable", () => {
+    const selected: number[] = []
+    const panel = createContentResultsPanel(issues, getDarkTheme(), {
+      onSelect: (index) => selected.push(index)
+    })
+    const row = panel.querySelector<HTMLElement>('[data-issue-index="2"]')
+    expect(row?.tagName).toBe("DIV")
+    row?.click()
+    expect(selected).toEqual([])
+    expect(panel.textContent).toContain("Template")
+  })
+
   test("issue text is not parsed as HTML", () => {
     const panel = createContentResultsPanel(issues, getDarkTheme(), {
       onSelect: () => {}
@@ -63,7 +83,7 @@ describe("createContentResultsPanel", () => {
       onSelect: () => {}
     })
     document.body.appendChild(panel)
-    expect(panel.textContent).toContain("No image or link issues")
+    expect(panel.textContent).toContain("No image, link or template issues")
     panel.querySelector("button")?.click()
     expect(closed).toBe(1)
     expect(panel.isConnected).toBe(false)

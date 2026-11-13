@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, test } from "bun:test"
 
 import {
   clearContentCheck,
+  clearQualityCheck,
   focusContentIssue,
+  focusQualityIssue,
   runAllChecks,
-  runContentCheck
+  runContentCheck,
+  runQualityCheck
 } from "./audit-actions"
 import { getHighlightCount } from "./ui/highlight"
 
@@ -37,6 +40,41 @@ describe("content check actions", () => {
     clearContentCheck()
     expect(getHighlightCount("images")).toBe(0)
     expect(focusContentIssue(0)).toBe(false)
+  })
+})
+
+describe("quality check actions", () => {
+  const addTinyText = () => {
+    const tiny = document.createElement("p")
+    tiny.textContent = "legal"
+    tiny.style.fontSize = "4px"
+    tiny.getBoundingClientRect = () =>
+      ({
+        bottom: 10,
+        height: 10,
+        left: 0,
+        right: 50,
+        top: 0,
+        width: 50
+      }) as DOMRect
+    document.body.appendChild(tiny)
+  }
+
+  test("focusQualityIssue focuses by index and clear forgets issues", () => {
+    addTinyText()
+    const result = runQualityCheck()
+    const index = result.issues.findIndex((issue) => issue.kind === "tiny-font")
+    expect(index).toBeGreaterThan(-1)
+    expect(focusQualityIssue(index)).toBe(true)
+    expect(focusQualityIssue(999)).toBe(false)
+    clearQualityCheck()
+    expect(getHighlightCount("structure")).toBe(0)
+    expect(focusQualityIssue(index)).toBe(false)
+  })
+
+  test("runAllChecks includes a quality outcome", () => {
+    addTinyText()
+    expect(runAllChecks().quality?.count).toBeGreaterThan(0)
   })
 })
 

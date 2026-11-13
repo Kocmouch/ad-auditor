@@ -60,5 +60,17 @@ window.addEventListener("message", (event) => {
     if (iframe) {
       results.renderContentResults(message.issues, iframe)
     }
+    return
+  }
+
+  if (message.type === WINDOW_MESSAGE.CHECK_QUALITY_RESPONSE) {
+    const iframe = resolveSenderIframe(event)
+    if (iframe) {
+      results.renderQualityResults(
+        message.issues,
+        message.coveragePercent,
+        iframe
+      )
+    }
   }
 })
