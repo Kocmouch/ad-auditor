@@ -1,3 +1,5 @@
+import { isExtensionElement } from "~lib/utils/extension-dom"
+
 export type ImageIssueKind = "oversized" | "upscaled" | "format" | "broken"
 export type ImageIssueSeverity = "error" | "warning" | "info"
 
@@ -218,6 +220,7 @@ export const checkImagesInDocument = (
 
   doc.querySelectorAll("img").forEach((node) => {
     const img = node as HTMLImageElement
+    if (isExtensionElement(img)) return
     const src = img.currentSrc || img.getAttribute("src") || ""
     if (!src) return
     const style = getStyle(img)
@@ -270,7 +273,7 @@ export const checkImagesInDocument = (
   for (let i = 0; i < limit; i++) {
     const el = all[i] as HTMLElement
     if (!(el instanceof (win ?? window).HTMLElement)) continue
-    if (el.tagName === "IMG") continue
+    if (el.tagName === "IMG" || isExtensionElement(el)) continue
     const style = getStyle(el)
     const bg = style.backgroundImage
     if (!bg || bg === "none" || isHidden(style)) continue

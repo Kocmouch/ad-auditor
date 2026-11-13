@@ -194,3 +194,31 @@ describe("checkAnimations", () => {
     expect(r.summary.total).toBe(0)
   })
 })
+
+describe("extension UI is ignored", () => {
+  test("infinite animation inside a plasmo shadow root is not reported", () => {
+    const host = document.createElement("plasmo-csui")
+    document.body.appendChild(host)
+    const inner = host
+      .attachShadow({ mode: "open" })
+      .appendChild(document.createElement("div"))
+    const anim = {
+      animationName: "plasmo-loading-animate-svg-fill",
+      playState: "running",
+      effect: {
+        target: inner,
+        getTiming: () => ({
+          delay: 0,
+          duration: 1000,
+          iterations: Infinity,
+          endDelay: 0
+        })
+      }
+    }
+    const result = checkAnimations(document, {
+      getAnimations: () => [anim as never]
+    })
+    expect(result.issues.length).toBe(0)
+    expect(result.infiniteCount).toBe(0)
+  })
+})

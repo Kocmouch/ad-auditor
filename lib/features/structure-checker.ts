@@ -1,4 +1,5 @@
 import { HIGHLIGHT_LAYER_ID } from "~lib/ui/highlight"
+import { isExtensionElement } from "~lib/utils/extension-dom"
 
 export type StructureIssueKind =
   | "quirks-mode"
@@ -124,7 +125,8 @@ const getOverflow = (style: CSSStyleDeclaration): [string, string] => {
   return [x, y]
 }
 
-const isInsideOverlay = (el: Element) => !!el.closest(`#${HIGHLIGHT_LAYER_ID}`)
+const isInsideOverlay = (el: Element) =>
+  !!el.closest(`#${HIGHLIGHT_LAYER_ID}`) || isExtensionElement(el)
 
 const hasDirectText = (el: Element) => {
   for (const node of Array.from(el.childNodes)) {

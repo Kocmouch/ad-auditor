@@ -1,3 +1,5 @@
+import { isExtensionElement } from "~lib/utils/extension-dom"
+
 export type LinkIssueSeverity = "error" | "warning" | "info"
 
 export type LinkIssueKind =
@@ -119,7 +121,9 @@ export const checkLinksInDocument = (
     candidates.push({ ...issue, key: `${issue.kind}\u0000${groupHref}` })
   }
 
-  const anchors = Array.from(doc.querySelectorAll<HTMLElement>("a[href]"))
+  const anchors = Array.from(
+    doc.querySelectorAll<HTMLElement>("a[href]")
+  ).filter((el) => !isExtensionElement(el))
   const anchorSet = new Set(anchors)
   const hrefCounts = new Map<string, { count: number; first: HTMLElement }>()
 
@@ -163,7 +167,7 @@ export const checkLinksInDocument = (
         href: describe(trimmed),
         message: target
           ? `Link target is "${target}" instead of _blank`
-          : "Link has no target=\"_blank\"",
+          : 'Link has no target="_blank"',
         element: anchor
       })
     } else {
@@ -194,7 +198,7 @@ export const checkLinksInDocument = (
   // Non-anchor click hints: data-href / data-clicktag (and onclick for visibility).
   const hinted = Array.from(
     doc.querySelectorAll<HTMLElement>("[onclick], [data-href], [data-clicktag]")
-  ).filter((el) => !anchorSet.has(el))
+  ).filter((el) => !anchorSet.has(el) && !isExtensionElement(el))
 
   for (const el of hinted) {
     if (isHidden(el, doc)) continue

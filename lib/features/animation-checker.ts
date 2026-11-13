@@ -1,3 +1,5 @@
+import { isExtensionElement } from "~lib/utils/extension-dom"
+
 /**
  * Animation checker: infinite loops, total animation length and animation count.
  *
@@ -142,6 +144,8 @@ export const checkAnimations = (
 
   for (const anim of animations) {
     if (!anim) continue
+    // Skip the extension's own UI and Plasmo's dev-mode loading indicator.
+    if (isExtensionElement(getTarget(anim) as Node | undefined)) continue
     if (anim.playState === undefined || anim.playState === "running") running++
 
     let timing:

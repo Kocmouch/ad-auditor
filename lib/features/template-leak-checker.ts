@@ -1,3 +1,5 @@
+import { isExtensionElement } from "~lib/utils/extension-dom"
+
 export type TemplateLeakSeverity = "error" | "warning" | "info"
 
 export type TemplateLeakKind = "text" | "url"
@@ -317,6 +319,7 @@ export const checkTemplateLeaks = (
     // Visible text nodes.
     const walkText = (element: Element) => {
       if (SKIPPED_TEXT_TAGS.has(element.tagName.toUpperCase())) return
+      if (isExtensionElement(element)) return
       if (isHiddenElement(element, view, hiddenCache)) return
       for (const child of Array.from(element.childNodes)) {
         if (child.nodeType === 3) addTextIssues(child as Text, push)
@@ -330,6 +333,7 @@ export const checkTemplateLeaks = (
     for (const el of elements) {
       const tag = el.tagName.toUpperCase()
       if (tag === "TEMPLATE") continue
+      if (isExtensionElement(el)) continue
       const html = el as HTMLElement
       for (const attr of Array.from(el.attributes)) {
         const name = attr.name.toLowerCase()

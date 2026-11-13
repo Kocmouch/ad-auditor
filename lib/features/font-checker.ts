@@ -3,6 +3,7 @@ import {
   clearHighlights,
   HIGHLIGHT_LAYER_ID
 } from "~lib/ui/highlight"
+import { isExtensionElement } from "~lib/utils/extension-dom"
 
 const FONT_GROUP = "font"
 
@@ -55,7 +56,10 @@ export const checkFontsInDocument = (): FontMismatch[] => {
       continue
     }
 
-    if (element.closest(`#${HIGHLIGHT_LAYER_ID}`)) {
+    if (
+      element.closest(`#${HIGHLIGHT_LAYER_ID}`) ||
+      isExtensionElement(element)
+    ) {
       continue
     }
 

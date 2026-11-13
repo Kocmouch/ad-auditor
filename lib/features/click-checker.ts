@@ -1,3 +1,5 @@
+import { isExtensionElement } from "~lib/utils/extension-dom"
+
 export type ClickIssueSeverity = "error" | "warning"
 
 export type ClickIssueKind = "small-target" | "low-coverage" | "obstructed"
@@ -188,6 +190,7 @@ export const checkClickability = (
     cy: number
   }[] = []
   for (const el of Array.from(doc.querySelectorAll<HTMLElement>("*"))) {
+    if (isExtensionElement(el)) continue
     if (!isClickableRoot(el, doc)) continue
     if (isHidden(el, doc)) continue
     const { width, height, left = 0, top = 0 } = measure(el)
