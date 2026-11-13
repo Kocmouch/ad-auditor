@@ -29,6 +29,7 @@ import {
   isCacheControlUrl
 } from "~lib/utils/url-validators"
 import { getEnhancedStatsErrorPayload } from "~lib/cdp/enhanced-stats"
+import { RUNTIME_MESSAGE } from "~lib/messaging"
 import { normalizeDocumentUrl, getDocumentKey } from "~lib/utils/url-validators"
 
 const OPEN_TAB_DEDUPE_WINDOW_MS = 800
@@ -466,7 +467,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "ad-auditor/open-tab") {
+  if (message?.type === RUNTIME_MESSAGE.OPEN_TAB) {
     const url = typeof message?.url === "string" ? message.url : ""
 
     if (!url) {
@@ -501,7 +502,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
-  if (message?.type === "ad-auditor/get-cdp-status") {
+  if (message?.type === RUNTIME_MESSAGE.GET_CDP_STATUS) {
     const tabId = typeof message?.tabId === "number" ? message.tabId : sender.tab?.id
 
     if (typeof tabId !== "number") {
@@ -531,7 +532,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
-  if (message?.type === "ad-auditor/get-enhanced-stats") {
+  if (message?.type === RUNTIME_MESSAGE.GET_ENHANCED_STATS) {
     const tabId = sender.tab?.id
     const documentUrl =
       typeof message?.documentUrl === "string" ? message.documentUrl : sender.url ?? ""

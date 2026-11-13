@@ -13,10 +13,7 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
 
 ## Current Features
 
-- Display modes:
-  - `Inside iframe (always visible)`
-  - `Inside iframe (show on hover)`
-  - `Below iframe` (default)
+- Stats bar rendered below each iframe at full width (single fixed layout; no display-mode options)
 - Measurement methods:
   - `Enhanced (CDP)` (default)
   - `Legacy (Performance API)`
@@ -33,31 +30,34 @@ Chrome extension built with **Plasmo + Bun** to inspect ad iframe network usage 
   - `Show waterfall lite`
   - `Focus offenders first`
   - `Show alerts`
-- Below-iframe layout option:
-  - choose iframe-width bar or full-page width (`width: 100%`)
 - Welcome page:
   - opens automatically on first install
   - available anytime from popup (`Open setup guide`)
   - includes interactive onboarding checklist and quick actions
 - **Font checking** (button with "T" icon):
   - Detects font mismatches (declared vs rendered)
-  - Highlights elements with colorful gradient border
-  - Shows results panel with detailed information
+  - Highlights affected elements with a colorful gradient border
+  - Shows a results panel with details
 - **Accessibility checking** (button with 3-line icon):
-  - **Opt-out detection**: Finds `.optout`/`#optout` elements in iframes and AMS
-  - **Contrast validation**: Checks WCAG AA compliance (4.5:1 minimum) for opt-out elements
-  - **Border validation**: Detects missing or invisible borders on banner containers
+  - **Opt-out detection**: finds `.optout`/`#optout` elements in iframes and AMS
+  - **Contrast validation**: WCAG AA (4.5:1 minimum) for opt-out elements
+  - **Border validation**: detects missing or invisible borders on banner containers
   - Highlights issues with colored outlines (red for critical, yellow for warnings)
-  - Shows unified results panel with detailed breakdown
+  - Shows a unified results panel with a detailed breakdown
 
 ## Defaults and Settings Migration
 
 On fresh install, the extension saves defaults to `chrome.storage.sync`:
 
-- `displayMode = below_iframe`
-- `measurementMethod = enhanced_cdp`
-- `disableCache = true`
-- `snapshots/waterfall/focus-offenders/show-alerts = false`
+- `STANDALONE_AMS_PREVIEW_BADGE_ENABLED = true`
+- `MEASUREMENT_METHOD = enhanced_cdp`
+- `LIMIT_METRIC = resources`
+- `LIMIT_BYTES = 2.5 MiB`
+- `DISABLE_CACHE = true`
+- `SHOW_CDP_STATUS = false`
+- `ENABLE_SNAPSHOTS`, `SHOW_WATERFALL`, `FOCUS_OFFENDERS`, `SHOW_ALERTS`, `SHOW_REQUEST_LIST = false`
+
+(Source of truth: `lib/storage/defaults.ts`.)
 
 Background script also runs versioned settings migration to backfill missing keys on existing installs.
 
@@ -76,10 +76,15 @@ bun run dev
 bun run build
 bun run package
 bun test
-bunx tsc --noEmit
+bun run typecheck   # tsc --noEmit
 ```
 
 Load unpacked extension from `build/chrome-mv3-dev` in `chrome://extensions` (Developer mode).
+
+## Permissions
+
+- `storage`: settings in `chrome.storage.sync`.
+- `debugger`: required for Enhanced (CDP) measurement. While it is active Chrome shows a "debugging this browser" banner; choose Legacy (Performance API) mode to avoid it.
 
 ## Notes
 

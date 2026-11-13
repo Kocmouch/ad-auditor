@@ -8,6 +8,7 @@ import { ToggleCard } from "~components/ToggleCard"
 import { OptionCards } from "~components/OptionCards"
 import { CdpStatusDisplay } from "~components/CdpStatusDisplay"
 import { getTheme } from "~lib/ui/theme"
+import { RUNTIME_MESSAGE } from "~lib/messaging"
 
 const MEASUREMENT_OPTIONS: Array<{
   value: MeasurementMethod
@@ -170,11 +171,6 @@ function IndexPopup() {
     return () => mediaQuery.removeListener(onChange)
   }, [])
 
-  const onSelectDisplayMode = (nextMode: DisplayMode) => {
-    setMode(nextMode)
-    chrome.storage.sync.set({ [STORAGE_KEYS.DISPLAY_MODE]: nextMode })
-  }
-
   const onSelectMeasurementMethod = (nextMethod: MeasurementMethod) => {
     setMeasurementMethod(nextMethod)
     chrome.storage.sync.set({ [STORAGE_KEYS.MEASUREMENT_METHOD]: nextMethod })
@@ -293,7 +289,7 @@ function IndexPopup() {
         chrome.runtime.sendMessage(
           {
             tabId,
-            type: "ad-auditor/get-cdp-status"
+            type: RUNTIME_MESSAGE.GET_CDP_STATUS
           },
           (response) => {
             if (chrome.runtime.lastError) {

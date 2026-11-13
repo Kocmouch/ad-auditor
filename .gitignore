@@ -40,5 +40,7 @@ keys.json
 
 # typescript
 .tsbuildinfo
+tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 AGENTS.md

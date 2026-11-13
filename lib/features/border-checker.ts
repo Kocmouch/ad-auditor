@@ -1,3 +1,6 @@
+import { compositeOver, parseColor, resolveBackground } from "~lib/utils/color"
+import type { RGB } from "~lib/utils/color"
+
 export type BorderIssue = {
   element: string
   issueType: "missing" | "invisible"
@@ -5,62 +8,47 @@ export type BorderIssue = {
   htmlElement?: HTMLElement
 }
 
-// Check if border is visible (has sufficient contrast with background)
-const isBorderVisible = (
+// Check if border is visible (has sufficient difference from background)
+export const isBorderVisible = (
   borderColor: string,
-  backgroundColor: string
+  background: RGB
 ): { visible: boolean; contrast: number } => {
-  const parseColor = (color: string): number[] | null => {
-    const rgbaMatch = color.match(
-      /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/
-    )
-    if (rgbaMatch) {
-      return [
-        parseInt(rgbaMatch[1]),
-        parseInt(rgbaMatch[2]),
-        parseInt(rgbaMatch[3]),
-        rgbaMatch[4] ? parseFloat(rgbaMatch[4]) : 1
-      ]
-    }
-
-    const hexMatch = color.match(/^#([0-9a-f]{6})$/i)
-    if (hexMatch) {
-      const hex = hexMatch[1]
-      return [
-        parseInt(hex.substring(0, 2), 16),
-        parseInt(hex.substring(2, 4), 16),
-        parseInt(hex.substring(4, 6), 16),
-        1
-      ]
-    }
-
-    return null
-  }
-
-  const borderRgba = parseColor(borderColor)
-  const bgRgba = parseColor(backgroundColor)
-
-  if (!borderRgba || !bgRgba) {
+  // computed borderColor may list several colors ("rgb(..) rgb(..)"); use the first
+  const first = borderColor.match(/rgba?\([^)]*\)|#[0-9a-f]+|transparent/i)
+  const border = parseColor(first ? first[0] : borderColor)
+  if (!border) {
     return { visible: false, contrast: 0 }
   }
 
-  // If border is transparent, it's not visible
-  if (borderRgba[3] < 0.3) {
+  // Nearly transparent border is not visible
+  if (border.a < 0.3) {
     return { visible: false, contrast: 0 }
   }
 
-  // Calculate color difference (0-765 range, 255*3)
-  const diff =
-    Math.abs(borderRgba[0] - bgRgba[0]) +
-    Math.abs(borderRgba[1] - bgRgba[1]) +
-    Math.abs(borderRgba[2] - bgRgba[2])
+  const flat = compositeOver(border, { ...background, a: 1 })
+  // Color difference (0-765 range, 255*3)
+  const diff = Math.round(
+    Math.abs(flat.r - background.r) +
+      Math.abs(flat.g - background.g) +
+      Math.abs(flat.b - background.b)
+  )
 
-  // For ad banners, even subtle borders are intentional
-  // Lower threshold: #fff vs #dedede = diff of ~33, which should pass
-  // Threshold of 20 allows for subtle but visible borders
-  const visible = diff > 20
+  // For ad banners even subtle borders are intentional (#fff vs #dedede passes)
+  return { visible: diff > 20, contrast: diff }
+}
 
-  return { visible, contrast: diff }
+// Returns null when the background can't be determined (image/gradient)
+const checkBorderVisibility = (
+  borderColor: string,
+  banner: HTMLElement
+): { visible: boolean; contrast: number; bg: string } | null => {
+  const bg = resolveBackground(banner)
+  if (bg.kind === "unverifiable") return null
+  const c = bg.color
+  return {
+    ...isBorderVisible(borderColor, c),
+    bg: `rgb(${Math.round(c.r)}, ${Math.round(c.g)}, ${Math.round(c.b)})`
+  }
 }
 
 export const checkBorderElements = (): BorderIssue[] => {
@@ -113,7 +101,8 @@ export const checkBorderElements = (): BorderIssue[] => {
       if (afterContent && afterContent !== "none") {
         const afterBorderWidth = parseFloat(afterStyle.borderWidth || "0")
         const afterBorderStyle = afterStyle.borderStyle
-        const afterBorderColor = afterStyle.borderColor
+        const afterBorderColor =
+          afterStyle.borderTopColor || afterStyle.borderColor
 
         if (
           afterBorderWidth >= 1 &&
@@ -121,10 +110,12 @@ export const checkBorderElements = (): BorderIssue[] => {
           afterBorderStyle !== "hidden"
         ) {
           hasBorder = true
-          const bannerBg = window.getComputedStyle(banner).backgroundColor
-          const visibilityCheck = isBorderVisible(afterBorderColor, bannerBg)
+          const visibilityCheck = checkBorderVisibility(
+            afterBorderColor,
+            banner
+          )
 
-          if (!visibilityCheck.visible) {
+          if (visibilityCheck && !visibilityCheck.visible) {
             borderIssueFound = true
             banner.style.boxShadow = "0 0 0 2px #f9ca24 inset"
             banner.setAttribute("data-ad-auditor-border-highlight", "true")
@@ -132,7 +123,7 @@ export const checkBorderElements = (): BorderIssue[] => {
             issues.push({
               element: `${elementDesc}::after`,
               issueType: "invisible",
-              details: `Pseudo-element border exists but is not visible (border: ${afterBorderColor}, background: ${bannerBg}, contrast: ${visibilityCheck.contrast})`,
+              details: `Pseudo-element border exists but is not visible (border: ${afterBorderColor}, background: ${visibilityCheck.bg}, contrast: ${visibilityCheck.contrast})`,
               htmlElement: banner
             })
           }
@@ -150,7 +141,8 @@ export const checkBorderElements = (): BorderIssue[] => {
       if (beforeContent && beforeContent !== "none") {
         const beforeBorderWidth = parseFloat(beforeStyle.borderWidth || "0")
         const beforeBorderStyle = beforeStyle.borderStyle
-        const beforeBorderColor = beforeStyle.borderColor
+        const beforeBorderColor =
+          beforeStyle.borderTopColor || beforeStyle.borderColor
 
         if (
           beforeBorderWidth >= 1 &&
@@ -158,10 +150,12 @@ export const checkBorderElements = (): BorderIssue[] => {
           beforeBorderStyle !== "hidden"
         ) {
           hasBorder = true
-          const bannerBg = window.getComputedStyle(banner).backgroundColor
-          const visibilityCheck = isBorderVisible(beforeBorderColor, bannerBg)
+          const visibilityCheck = checkBorderVisibility(
+            beforeBorderColor,
+            banner
+          )
 
-          if (!visibilityCheck.visible) {
+          if (visibilityCheck && !visibilityCheck.visible) {
             borderIssueFound = true
             banner.style.boxShadow = "0 0 0 2px #f9ca24 inset"
             banner.setAttribute("data-ad-auditor-border-highlight", "true")
@@ -169,7 +163,7 @@ export const checkBorderElements = (): BorderIssue[] => {
             issues.push({
               element: `${elementDesc}::before`,
               issueType: "invisible",
-              details: `Pseudo-element border exists but is not visible (border: ${beforeBorderColor}, background: ${bannerBg}, contrast: ${visibilityCheck.contrast})`,
+              details: `Pseudo-element border exists but is not visible (border: ${beforeBorderColor}, background: ${visibilityCheck.bg}, contrast: ${visibilityCheck.contrast})`,
               htmlElement: banner
             })
           }
@@ -185,7 +179,7 @@ export const checkBorderElements = (): BorderIssue[] => {
       const computed = window.getComputedStyle(borderContainer)
       const borderWidth = parseFloat(computed.borderWidth || "0")
       const borderStyle = computed.borderStyle
-      const borderColor = computed.borderColor
+      const borderColor = computed.borderTopColor || computed.borderColor
 
       if (
         borderWidth >= 1 &&
@@ -193,10 +187,9 @@ export const checkBorderElements = (): BorderIssue[] => {
         borderStyle !== "hidden"
       ) {
         hasBorder = true
-        const bannerBg = window.getComputedStyle(banner).backgroundColor
-        const visibilityCheck = isBorderVisible(borderColor, bannerBg)
+        const visibilityCheck = checkBorderVisibility(borderColor, banner)
 
-        if (!visibilityCheck.visible) {
+        if (visibilityCheck && !visibilityCheck.visible) {
           borderIssueFound = true
           banner.style.boxShadow = "0 0 0 2px #f9ca24 inset"
           banner.setAttribute("data-ad-auditor-border-highlight", "true")
@@ -204,7 +197,7 @@ export const checkBorderElements = (): BorderIssue[] => {
           issues.push({
             element: `${elementDesc} > .border-container`,
             issueType: "invisible",
-            details: `Border container exists but border is not visible (border: ${borderColor}, background: ${bannerBg}, contrast: ${visibilityCheck.contrast})`,
+            details: `Border container exists but border is not visible (border: ${borderColor}, background: ${visibilityCheck.bg}, contrast: ${visibilityCheck.contrast})`,
             htmlElement: banner
           })
         }

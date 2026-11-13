@@ -108,10 +108,10 @@ export const createAccessibilityResultsPanel = (
   )
 
   const optOutCount = document.createElement("div")
-  optOutCount.innerHTML = `<span style="color: ${theme.textMuted}">Opt-out issues:</span> <strong style="color: ${optOutIssues.length > 0 ? "#ff6b6b" : theme.accent}">${optOutIssues.length}</strong>`
+  appendCount(optOutCount, "Opt-out issues:", optOutIssues.length, theme)
 
   const borderCount = document.createElement("div")
-  borderCount.innerHTML = `<span style="color: ${theme.textMuted}">Border issues:</span> <strong style="color: ${borderIssues.length > 0 ? "#ff6b6b" : theme.accent}">${borderIssues.length}</strong>`
+  appendCount(borderCount, "Border issues:", borderIssues.length, theme)
 
   summary.appendChild(optOutCount)
   summary.appendChild(borderCount)
@@ -188,6 +188,31 @@ export const createAccessibilityResultsPanel = (
   return panel
 }
 
+const appendCount = (
+  container: HTMLElement,
+  label: string,
+  count: number,
+  theme: Theme
+) => {
+  const span = document.createElement("span")
+  span.style.color = theme.textMuted
+  span.textContent = label
+  const strong = document.createElement("strong")
+  strong.style.color = count > 0 ? "#ff6b6b" : theme.accent
+  strong.textContent = String(count)
+  container.append(span, " ", strong)
+}
+
+const appendCode = (container: HTMLElement, text: string, theme: Theme) => {
+  const code = document.createElement("code")
+  code.setAttribute(
+    "style",
+    `background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 3px; font-size: 12px; color: ${theme.accent}`
+  )
+  code.textContent = text
+  container.appendChild(code)
+}
+
 const createIssueCard = (issue: OptOutIssue, theme: Theme): HTMLDivElement => {
   const card = document.createElement("div")
   card.setAttribute(
@@ -202,7 +227,7 @@ const createIssueCard = (issue: OptOutIssue, theme: Theme): HTMLDivElement => {
   )
 
   const elementLabel = document.createElement("div")
-  elementLabel.innerHTML = `<code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 3px; font-size: 12px; color: ${theme.accent}">${issue.element}</code>`
+  appendCode(elementLabel, issue.element, theme)
   card.appendChild(elementLabel)
 
   const issueType = document.createElement("div")
@@ -230,7 +255,10 @@ const createIssueCard = (issue: OptOutIssue, theme: Theme): HTMLDivElement => {
 
   if (issue.contrastRatio !== undefined) {
     const ratio = document.createElement("div")
-    ratio.innerHTML = `Contrast ratio: <strong>${issue.contrastRatio}:1</strong> (minimum: 4.5:1)`
+    ratio.append("Contrast ratio: ")
+    const strong = document.createElement("strong")
+    strong.textContent = `${issue.contrastRatio}:1`
+    ratio.append(strong, " (minimum: 4.5:1)")
     ratio.setAttribute(
       "style",
       ["margin-top: 4px", "font-size: 12px", `color: ${theme.text}`].join(";")
@@ -258,7 +286,7 @@ const createBorderIssueCard = (
   )
 
   const elementLabel = document.createElement("div")
-  elementLabel.innerHTML = `<code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 3px; font-size: 12px; color: ${theme.accent}">${issue.element}</code>`
+  appendCode(elementLabel, issue.element, theme)
   card.appendChild(elementLabel)
 
   const issueType = document.createElement("div")
@@ -295,6 +323,8 @@ const getIssueTypeLabel = (type: OptOutIssue["issueType"]): string => {
       return "⚠ Low contrast"
     case "hidden":
       return "⚠ Hidden element"
+    case "contrast-unverifiable":
+      return "ℹ Contrast needs manual check"
   }
 }
 
@@ -315,6 +345,8 @@ const getIssueColor = (type: OptOutIssue["issueType"]): string => {
       return "#f9ca24"
     case "hidden":
       return "#ff6b6b"
+    case "contrast-unverifiable":
+      return "#74b9ff"
   }
 }
 

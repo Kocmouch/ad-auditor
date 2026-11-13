@@ -1,14 +1,15 @@
 {
   "name": "ad-auditor",
   "displayName": "Ad Auditor",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Visualizes the memory and DOM impact of ad banners by overlaying stats directly on iframes.",
   "author": "Jakub 'Kocmouch' Kamiński",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
     "package": "plasmo package",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "plasmo": "0.90.5",
@@ -16,11 +17,13 @@
     "react-dom": "18.2.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^21.0.4",
     "@ianvs/prettier-plugin-sort-imports": "4.1.1",
     "@types/chrome": "0.0.258",
     "@types/node": "20.11.5",
     "@types/react": "18.2.48",
     "@types/react-dom": "18.2.18",
+    "happy-dom": "^21.0.4",
     "prettier": "3.2.4",
     "typescript": "5.3.3"
   },
@@ -32,8 +35,6 @@
       "https://ams.creativecdn.com/*"
     ],
     "permissions": [
-      "scripting",
-      "tabs",
       "storage",
       "debugger"
     ]
